@@ -1,4 +1,4 @@
-import { App, PluginSettingTab, Setting, Notice } from 'obsidian';
+import { App, Plugin, PluginSettingTab, Setting, Notice } from 'obsidian';
 import type { DocPromptSettings } from './Settings';
 
 export interface SettingsTabHost {
@@ -11,8 +11,8 @@ export interface SettingsTabHost {
 }
 
 export class DocPromptSettingsTab extends PluginSettingTab {
-    constructor(app: App, private host: SettingsTabHost) {
-        super(app, host as any);
+    constructor(app: App, plugin: Plugin, private host: SettingsTabHost) {
+        super(app, plugin);
     }
 
     display(): void {

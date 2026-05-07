@@ -52,7 +52,7 @@ export default class DocPromptPlugin extends Plugin {
             this.orchestrator.processAllDeferred();
         });
 
-        this.addSettingTab(new DocPromptSettingsTab(this.app, {
+        this.addSettingTab(new DocPromptSettingsTab(this.app, this, {
             settings: this.settings,
             saveSettings: () => this.saveSettings(),
             listPermanentSkips: () => this.skipStore.listPermanent(),
