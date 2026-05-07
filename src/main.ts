@@ -61,7 +61,7 @@ export default class DocPromptPlugin extends Plugin {
         }));
 
         if (this.settings.autoRepromptOnStart) {
-            window.setTimeout(() => this.orchestrator.checkDeferred(), 3000);
+            this.registerInterval(window.setTimeout(() => this.orchestrator.checkDeferred(), 3000));
         }
     }
 
