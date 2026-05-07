@@ -97,6 +97,7 @@ export interface Vault {
     append(file: TFile, data: string): Promise<void>;
     on(name: string, cb: (...args: any[]) => any): any;
     getAbstractFileByPath(path: string): any;
+    getFileByPath(path: string): TFile | null;
     getConfig?(key: string): any;
 }
 

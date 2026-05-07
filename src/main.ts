@@ -27,6 +27,7 @@ export default class DocPromptPlugin extends Plugin {
         const writer = new SubBulletWriter(this.app, fallbackLog);
 
         this.orchestrator = new PromptOrchestrator({
+            app: this.app,
             settings: this.settings,
             skipStore: this.skipStore,
             modalShow: (taskLine) => new DocumentationModal(this.app, taskLine).show(),
