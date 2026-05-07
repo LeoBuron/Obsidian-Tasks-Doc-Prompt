@@ -1,3 +1,8 @@
+import type { App, TFile } from 'obsidian';
+import type { CompletionEvent } from '../detection/types';
+import type { FallbackLog } from './FallbackLog';
+import { stripTasksFields } from '../identity/TaskIdentity';
+
 export interface IndentationStyle {
     indentWithTabs: boolean;
     tabSize: number; // used only when indentWithTabs is false
@@ -34,4 +39,64 @@ export function composeSubBullet(
     const out = lines.slice();
     out.splice(lineIndex + 1, 0, ...composed);
     return out;
+}
+
+export class SubBulletWriter {
+    constructor(private app: App, private fallbackLog: FallbackLog) {}
+
+    private indentationStyle(): IndentationStyle {
+        const useTab = (this.app.vault.getConfig?.('useTab') ?? true) as boolean;
+        const tabSize = (this.app.vault.getConfig?.('tabSize') ?? 4) as number;
+        return { indentWithTabs: useTab, tabSize };
+    }
+
+    async write(event: CompletionEvent, userText: string): Promise<void> {
+        const state: { resolvedIndex: number | null; mismatchReason: string | null } = {
+            resolvedIndex: null,
+            mismatchReason: null,
+        };
+
+        await this.app.vault.process(event.file as TFile, (data) => {
+            const lines = data.split('\n');
+            const target = this.locate(lines, event);
+            if (target.index === null) {
+                state.mismatchReason = target.reason;
+                return data;
+            }
+            state.resolvedIndex = target.index;
+            const newLines = composeSubBullet(lines, target.index, userText, this.indentationStyle());
+            return newLines.join('\n');
+        });
+
+        if (state.resolvedIndex === null) {
+            await this.fallbackLog.append({
+                timestamp: new Date(),
+                taskLine: event.taskLine,
+                userText,
+                filePath: event.file.path,
+                lineNumber: event.lineNumber,
+                reason: state.mismatchReason ?? 'unknown',
+            });
+        }
+    }
+
+    private locate(lines: string[], event: CompletionEvent): { index: number | null; reason: string } {
+        const desc = stripTasksFields(event.taskLine);
+
+        // Primary: by line number, verify description matches.
+        if (event.lineNumber >= 0 && event.lineNumber < lines.length) {
+            if (stripTasksFields(lines[event.lineNumber]) === desc) {
+                return { index: event.lineNumber, reason: '' };
+            }
+        }
+
+        // Fallback: linear scan for any task line whose stripped description matches.
+        for (let i = 0; i < lines.length; i++) {
+            if (/^\s*[-*+]\s*\[[^\]]\]/.test(lines[i]) && stripTasksFields(lines[i]) === desc) {
+                return { index: i, reason: '' };
+            }
+        }
+
+        return { index: null, reason: 'description-not-found' };
+    }
 }
