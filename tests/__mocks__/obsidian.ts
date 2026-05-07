@@ -32,9 +32,36 @@ export class Setting {
     constructor(_containerEl: any) {}
     setName(_n: string): this { return this; }
     setDesc(_d: string): this { return this; }
-    addText(_cb: any): this { return this; }
-    addToggle(_cb: any): this { return this; }
-    addButton(_cb: any): this { return this; }
+    addText(_cb: any): this {
+        _cb({
+            setValue: (_v: any) => ({
+                onChange: (_h: any) => {},
+            }),
+        });
+        return this;
+    }
+    addToggle(_cb: any): this {
+        _cb({
+            setValue: (_v: any) => ({
+                onChange: (_h: any) => {},
+                setDisabled: (_d: any) => ({
+                    onChange: (_h: any) => {},
+                }),
+            }),
+            setDisabled: (_d: any) => ({
+                onChange: (_h: any) => {},
+            }),
+        });
+        return this;
+    }
+    addButton(_cb: any): this {
+        _cb({
+            setButtonText: (_t: any) => ({
+                onClick: (_h: any) => {},
+            }),
+        });
+        return this;
+    }
     addTextArea(_cb: any): this { return this; }
     addExtraButton(_cb: any): this { return this; }
 }
