@@ -1,5 +1,8 @@
 import { createHash } from 'crypto';
+import type { App, EventRef, TFile } from 'obsidian';
 import type { CompletionEvent } from './types';
+import type { CompletionDetector, CompletionHandler } from './CompletionDetector';
+import type { DocPromptSettings } from '../config/Settings';
 
 export interface TaskLineSnapshot {
     lineNumber: number;
@@ -90,4 +93,87 @@ export function diffSnapshot(
     // Sort by line number for deterministic ordering.
     events.sort((a, b) => a.lineNumber - b.lineNumber);
     return events;
+}
+
+export class FileWatchDetector implements CompletionDetector {
+    private cache = new Map<string, TaskLineSnapshot[]>();
+    private handler: CompletionHandler | null = null;
+    private modifyRef: EventRef | null = null;
+    private renameRef: EventRef | null = null;
+    private deleteRef: EventRef | null = null;
+    private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+    constructor(private app: App, private settings: DocPromptSettings) {}
+
+    onCompletion(handler: CompletionHandler): void {
+        this.handler = handler;
+    }
+
+    start(): void {
+        // Async warm-up: build cache without blocking onload().
+        void this.warmCache();
+        this.modifyRef = this.app.vault.on('modify', (file: any) => {
+            if (!(file && file.extension === 'md')) return;
+            this.scheduleDiff(file as TFile);
+        });
+        this.renameRef = this.app.vault.on('rename', (file: any, oldPath: string) => {
+            if (this.cache.has(oldPath)) {
+                const snaps = this.cache.get(oldPath)!;
+                this.cache.delete(oldPath);
+                this.cache.set(file.path, snaps);
+            }
+        });
+        this.deleteRef = this.app.vault.on('delete', (file: any) => {
+            this.cache.delete(file.path);
+        });
+    }
+
+    stop(): void {
+        for (const t of this.debounceTimers.values()) clearTimeout(t);
+        this.debounceTimers.clear();
+        const off = (ref: EventRef | null) => {
+            if (!ref) return;
+            (this.app.vault as any).offref?.(ref);
+        };
+        off(this.modifyRef); this.modifyRef = null;
+        off(this.renameRef); this.renameRef = null;
+        off(this.deleteRef); this.deleteRef = null;
+    }
+
+    private async warmCache(): Promise<void> {
+        try {
+            for (const file of this.app.vault.getMarkdownFiles()) {
+                const content = await this.app.vault.read(file);
+                this.cache.set(file.path, snapshotLines(content.split('\n')));
+            }
+        } catch (err) {
+            console.error('[FileWatchDetector] warmCache failed:', err);
+        }
+    }
+
+    private scheduleDiff(file: TFile): void {
+        const existing = this.debounceTimers.get(file.path);
+        if (existing) clearTimeout(existing);
+        const t = setTimeout(() => {
+            this.debounceTimers.delete(file.path);
+            void this.runDiff(file);
+        }, 250);
+        this.debounceTimers.set(file.path, t);
+    }
+
+    private async runDiff(file: TFile): Promise<void> {
+        if (!this.handler) return;
+        try {
+            const content = await this.app.vault.read(file);
+            const lines = content.split('\n');
+            const oldSnaps = this.cache.get(file.path) ?? [];
+            const events = diffSnapshot(oldSnaps, lines, this.settings.doneStatusSymbols);
+            this.cache.set(file.path, snapshotLines(lines));
+            for (const ev of events) {
+                await this.handler({ ...ev, file });
+            }
+        } catch (err) {
+            console.error('[FileWatchDetector] runDiff failed:', err);
+        }
+    }
 }
