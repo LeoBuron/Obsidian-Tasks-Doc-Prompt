@@ -157,7 +157,7 @@ export class FileWatchDetector implements CompletionDetector {
         const t = setTimeout(() => {
             this.debounceTimers.delete(file.path);
             void this.runDiff(file);
-        }, 250);
+        }, 75);
         this.debounceTimers.set(file.path, t);
     }
 
