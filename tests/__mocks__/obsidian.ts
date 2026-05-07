@@ -21,6 +21,7 @@ export class Notice {
 export class Modal {
     contentEl: any = { empty: () => {}, createEl: () => ({}), createDiv: () => ({}) };
     titleEl: any = { setText: (_: string) => {} };
+    constructor(app: App) {}
     open(): void {}
     close(): void {}
     onOpen(): void {}
