@@ -14,7 +14,10 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "lib": ["DOM", "ES2020"],
-    "types": ["node", "jest"]
+    "types": ["node", "jest"],
+    "paths": {
+      "obsidian": ["./tests/__mocks__/obsidian.ts"]
+    }
   },
   "include": ["src/**/*.ts", "tests/**/*.ts"]
 }
