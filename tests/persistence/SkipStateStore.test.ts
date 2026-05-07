@@ -46,22 +46,23 @@ describe('SkipStateStore', () => {
         expect(deferred[0].remindAt).toBe(1_000_000);
     });
 
-    test('takeDueDeferred returns and removes entries with remindAt <= now', async () => {
+    test('getDueDeferred returns entries with remindAt <= now WITHOUT removing them', async () => {
         const store = await SkipStateStore.load(new MemoryPersistence());
         store.markDeferred('id-due', { filePath: 'A.md', lineNumber: 1, taskLine: 't1' }, 100);
         store.markDeferred('id-future', { filePath: 'A.md', lineNumber: 2, taskLine: 't2' }, 10_000);
-        const due = store.takeDueDeferred(500);
+        const due = store.getDueDeferred(500);
         expect(due.map(d => d.taskId)).toEqual(['id-due']);
-        expect(store.getDeferred().map(d => d.taskId)).toEqual(['id-future']);
+        // Critically, the store still holds BOTH entries.
+        expect(store.getDeferred().map(d => d.taskId).sort()).toEqual(['id-due', 'id-future']);
     });
 
-    test('takeAllDeferred returns and removes all', async () => {
+    test('getDueDeferred is idempotent — repeated calls return the same data', async () => {
         const store = await SkipStateStore.load(new MemoryPersistence());
-        store.markDeferred('a', { filePath: 'A.md', lineNumber: 1, taskLine: 't' }, 10_000);
-        store.markDeferred('b', { filePath: 'A.md', lineNumber: 2, taskLine: 't' }, 20_000);
-        const all = store.takeAllDeferred();
-        expect(all.map(d => d.taskId).sort()).toEqual(['a', 'b']);
-        expect(store.getDeferred()).toEqual([]);
+        store.markDeferred('id-due', { filePath: 'A.md', lineNumber: 1, taskLine: 't1' }, 100);
+        const first = store.getDueDeferred(500);
+        const second = store.getDueDeferred(500);
+        expect(first.map(d => d.taskId)).toEqual(['id-due']);
+        expect(second.map(d => d.taskId)).toEqual(['id-due']);
     });
 
     test('removeDeferred removes by id without firing event', async () => {

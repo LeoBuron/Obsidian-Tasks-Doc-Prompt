@@ -107,23 +107,18 @@ export class SkipStateStore {
         return Object.values(this.state.deferred);
     }
 
-    takeDueDeferred(now: number): DeferredEntry[] {
+    /**
+     * Returns deferred entries whose `remindAt <= now` WITHOUT removing them
+     * from the store. Removal is the caller's responsibility (e.g. after the
+     * user acts on the re-prompt). This preserves persistence across Obsidian
+     * restarts even while a modal is open.
+     */
+    getDueDeferred(now: number): DeferredEntry[] {
         const due: DeferredEntry[] = [];
-        for (const [id, entry] of Object.entries(this.state.deferred)) {
-            if (entry.remindAt <= now) {
-                due.push(entry);
-                delete this.state.deferred[id];
-            }
+        for (const entry of Object.values(this.state.deferred)) {
+            if (entry.remindAt <= now) due.push(entry);
         }
-        if (due.length > 0) this.scheduleSave();
         return due;
-    }
-
-    takeAllDeferred(): DeferredEntry[] {
-        const all = Object.values(this.state.deferred);
-        this.state.deferred = {};
-        if (all.length > 0) this.scheduleSave();
-        return all;
     }
 
     private scheduleSave(): void {
