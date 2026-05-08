@@ -11,7 +11,6 @@ export interface SettingsTabHost {
     listDeferred(): DeferredEntry[];
     cancelDeferred(taskId: string): void;
     editDeferred(entry: DeferredEntry): Promise<void>;
-    deferredCount(): number;
     processAllDeferred(): void;
 }
 
@@ -120,13 +119,13 @@ export class DocPromptSettingsTab extends PluginSettingTab {
                     .addButton((b: any) => {
                         b.setButtonText('Edit').onClick(async () => {
                             await this.host.editDeferred(entry);
-                            this.display();
+                            if (this.containerEl.isConnected) this.display();
                         });
                     })
                     .addButton((b: any) => {
                         b.setButtonText('Cancel').onClick(() => {
                             this.host.cancelDeferred(entry.taskId);
-                            this.display();
+                            if (this.containerEl.isConnected) this.display();
                         });
                     });
             }
