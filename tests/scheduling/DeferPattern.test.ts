@@ -68,4 +68,23 @@ describe('parseDeferInput', () => {
         expect(() => parseDeferInput('0 9 60')).toThrow(DeferPatternParseError);
         expect(() => parseDeferInput('0 9 -1')).toThrow(DeferPatternParseError);
     });
+
+    test('normalises -0 to 0', () => {
+        const p = parseDeferInput('-0 9 0');
+        expect(p.daysFromNow).toBe(0);
+        expect(Object.is(p.daysFromNow, 0)).toBe(true);
+        expect(Object.is(p.daysFromNow, -0)).toBe(false);
+    });
+
+    test('error.reason holds the bare reason; message has the prefix', () => {
+        try {
+            parseDeferInput('* * *');
+            fail('expected DeferPatternParseError');
+        } catch (e) {
+            expect(e).toBeInstanceOf(DeferPatternParseError);
+            const err = e as DeferPatternParseError;
+            expect(err.reason).toBe('all-wildcard pattern is ambiguous');
+            expect(err.message).toBe('Invalid defer pattern: all-wildcard pattern is ambiguous');
+        }
+    });
 });

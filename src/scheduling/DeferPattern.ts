@@ -39,12 +39,13 @@ function parseField(
         );
     }
     const n = parseInt(token, 10);
-    if (n < min || n > max) {
+    const normalised = n === 0 ? 0 : n;   // collapse IEEE -0 to +0
+    if (normalised < min || normalised > max) {
         throw new DeferPatternParseError(
-            `${name}: ${n} out of range ${min}..${
+            `${name}: ${normalised} out of range ${min}..${
                 Number.isFinite(max) ? max : '∞'
             }`,
         );
     }
-    return n;
+    return normalised;
 }
