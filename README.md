@@ -8,6 +8,29 @@ so the documentation lives next to the work it describes.
 > Detection is file-watch based today; the architecture is designed to swap in
 > a Tasks-API hook the moment one is exposed.
 
+## Who is this for?
+
+You're the audience if you fall into any of these:
+
+- You use Obsidian Tasks and want a worklog, not just a checked/unchecked state.
+- You work in a research, engineering, or lab-notebook style where each closed
+  task should carry a one- or two-sentence note about what was done or learned.
+- You frequently check a task off and, three days later, have no idea what you
+  actually did.
+
+## The problem it solves
+
+Marking a task done costs two seconds. Capturing *what* you did — the outcome,
+the snag, the decision — has its own friction, so it usually doesn't happen.
+That captured detail is exactly what matters later: at the weekly review, when
+a similar task comes back, when someone asks how you handled something.
+
+This plugin removes the friction by folding the writing step into the same beat
+as the task transition. The moment the checkbox flips, the prompt is open and
+the cursor is in the textarea. One sentence is fine. The note is saved as an
+indented sub-bullet under the task, in the same file, at the same scroll
+position — no context switch.
+
 ## What it does
 
 When a task line transitions from open (`- [ ]`) to a configured "done" status
