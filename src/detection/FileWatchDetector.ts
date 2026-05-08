@@ -13,15 +13,15 @@ export interface TaskLineSnapshot {
 
 const TASK_LINE_RE = /^(\s*)[-*+]\s*\[([^\]])\]\s*(.*)$/;
 const BLOCK_ID_RE = /\s*\^([A-Za-z0-9-]+)\s*$/;
-// Tasks plugin appends ✅ YYYY-MM-DD on toggle to done. Strip it so the same
-// task before and after toggle hash to the same value within a diff cycle.
-const COMPLETION_DATE_RE = /\s*✅\s*\d{4}-\d{2}-\d{2}\s*/g;
+// Tasks plugin appends ✅ YYYY-MM-DD on toggle to done and ❌ YYYY-MM-DD on
+// toggle to cancelled. Strip both so the same task before and after toggle
+// hashes to the same value within a diff cycle.
+const STATUS_DATE_RE = /\s*[✅❌]\s*\d{4}-\d{2}-\d{2}\s*/g;
 
 function descriptionHash(rawAfterBracket: string): string {
-    // Hash the description text only; strip block-id, completion date, and trailing whitespace.
     const noBlock = rawAfterBracket.replace(BLOCK_ID_RE, '');
-    const noCompletionDate = noBlock.replace(COMPLETION_DATE_RE, ' ').replace(/\s+/g, ' ').trim();
-    return createHash('sha1').update(noCompletionDate).digest('hex').slice(0, 16);
+    const noStatusDate = noBlock.replace(STATUS_DATE_RE, ' ').replace(/\s+/g, ' ').trim();
+    return createHash('sha1').update(noStatusDate).digest('hex').slice(0, 16);
 }
 
 function extractBlockId(rawAfterBracket: string): string | undefined {

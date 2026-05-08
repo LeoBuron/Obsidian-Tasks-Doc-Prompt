@@ -96,4 +96,21 @@ describe('diffSnapshot', () => {
         const newLines = ['- [D] task'];
         expect(diffSnapshot(oldSnaps, newLines, ['D'])).toHaveLength(1);
     });
+
+    // Regression test for issue #6:
+    // When a user right-clicks the checkbox in a Tasks query result and selects
+    // the "cancelled" status `-`, the Tasks plugin rewrites the source line to
+    // append `❌ YYYY-MM-DD` (cancelledDateSymbol) — analogous to how toggling
+    // to `x` appends `✅ YYYY-MM-DD`. Today, descriptionHash strips the done
+    // date but not the cancelled date, so the old `[ ]` snapshot and the new
+    // `[-]` snapshot hash differently and no event is emitted.
+    test('emits event when Tasks plugin appends ❌ cancelled date on right-click → -', () => {
+        const oldSnaps = snapshotLines(['- [ ] write report']);
+        const newLines = ['- [-] write report ❌ 2026-05-08'];
+        const events = diffSnapshot(oldSnaps, newLines, ['x', 'X', '-']);
+        expect(events).toHaveLength(1);
+        expect(events[0].previousStatus).toBe(' ');
+        expect(events[0].newStatus).toBe('-');
+        expect(events[0].lineNumber).toBe(0);
+    });
 });
