@@ -1,9 +1,11 @@
 import { App, Modal } from 'obsidian';
+import type { DeferPattern } from '../scheduling/DeferPattern';
 
 export type ModalResult =
     | { kind: 'save'; text: string }
-    | { kind: 'defer' }
-    | { kind: 'permanent-skip' };
+    | { kind: 'defer'; remindAt?: number; recurrence?: DeferPattern }
+    | { kind: 'permanent-skip' }
+    | { kind: 'cancel' };
 
 export class DocumentationModal extends Modal {
     private resolve!: (r: ModalResult) => void;
