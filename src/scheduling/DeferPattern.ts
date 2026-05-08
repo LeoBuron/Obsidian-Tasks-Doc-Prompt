@@ -55,8 +55,10 @@ export function computeNextMatch(pattern: DeferPattern, now: Date): number {
         }
     }
 
-    for (let i = 0; i < ONE_YEAR_OF_MINUTES; i++) {
-        if (matches(pattern, candidate, reference)) return candidate.getTime();
+    const refDay = startOfDay(reference).getTime();
+    const deadline = reference.getTime() + ONE_YEAR_OF_MINUTES * 60_000;
+    while (candidate.getTime() <= deadline) {
+        if (matches(pattern, candidate, reference, refDay)) return candidate.getTime();
         candidate.setMinutes(candidate.getMinutes() + 1);
     }
     throw new Error('computeNextMatch: no match within one year');
@@ -68,14 +70,11 @@ function startOfDay(d: Date): Date {
     return c;
 }
 
-function matches(p: DeferPattern, candidate: Date, reference: Date): boolean {
+function matches(p: DeferPattern, candidate: Date, reference: Date, refDay: number): boolean {
     if (candidate.getTime() <= reference.getTime()) return false;
     if (p.hour !== null && candidate.getHours() !== p.hour) return false;
     if (p.minute !== null && candidate.getMinutes() !== p.minute) return false;
     if (p.daysFromNow !== null) {
-        // "forward only": candidate may land on or after reference + D days,
-        // never before. Computed in calendar days.
-        const refDay = startOfDay(reference).getTime();
         const candDay = startOfDay(candidate).getTime();
         const dayDiff = Math.round((candDay - refDay) / 86_400_000);
         if (dayDiff < p.daysFromNow) return false;
