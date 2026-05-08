@@ -91,10 +91,12 @@ export class DocumentationModal extends Modal {
             });
         }
 
-        const deferUntil = btnRow.createEl('button', { text: 'Defer until…' });
-        deferUntil.addEventListener('click', () => {
-            this.togglePanel();
-        });
+        if (!this.prefill) {
+            const deferUntil = btnRow.createEl('button', { text: 'Defer until…' });
+            deferUntil.addEventListener('click', () => {
+                this.togglePanel();
+            });
+        }
 
         if (!this.prefill) {
             const spacer = btnRow.createDiv();
@@ -236,6 +238,12 @@ export class DocumentationModal extends Modal {
         } catch (err) {
             const msg = err instanceof DeferPatternParseError ? err.message : String(err);
             new Notice(msg);
+            if (err instanceof DeferPatternParseError) {
+                const r = err.reason;
+                if (r.startsWith('Day')) this.dayInput?.focus();
+                else if (r.startsWith('Hour')) this.hourInput?.focus();
+                else if (r.startsWith('Min')) this.minInput?.focus();
+            }
             return;
         }
         const remindAt = computeNextMatch(pattern, new Date());
