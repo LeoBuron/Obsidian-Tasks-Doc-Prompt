@@ -108,7 +108,7 @@ export function formatDeferPattern(p: DeferPattern): string {
     const { daysFromNow: d, hour: h, minute: m } = p;
     const time = (hh: number, mm: number) => `${hh}:${mm.toString().padStart(2, '0')}`;
 
-    // every :MM (only minute fixed, day and hour wildcard, MM > 0)
+    // only minute is pinned; day and hour are wildcard
     if (d === null && h === null && m !== null) {
         return `every :${m.toString().padStart(2, '0')}`;
     }
