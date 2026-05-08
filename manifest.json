@@ -5,6 +5,6 @@
   "minAppVersion": "1.5.0",
   "description": "When a task is completed, prompt for a short documentation paragraph saved as an indented sub-bullet.",
   "author": "Leo Buron",
-  "authorUrl": "",
-  "isDesktopOnly": false
+  "authorUrl": "https://github.com/LeoBuron",
+  "isDesktopOnly": true
 }
