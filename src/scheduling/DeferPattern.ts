@@ -102,3 +102,31 @@ function parseField(
     }
     return normalised;
 }
+
+/** Short plain-English label for a recurrence badge. Never throws. */
+export function formatDeferPattern(p: DeferPattern): string {
+    const { daysFromNow: d, hour: h, minute: m } = p;
+    const time = (hh: number, mm: number) => `${hh}:${mm.toString().padStart(2, '0')}`;
+
+    // every :MM (only minute fixed, day and hour wildcard, MM > 0)
+    if (d === null && h === null && m !== null) {
+        return `every :${m.toString().padStart(2, '0')}`;
+    }
+    // every day at HH:MM
+    if (d === null && h !== null && m !== null) {
+        return `every day at ${time(h, m)}`;
+    }
+    // daily at HH:MM (D=1)
+    if (d === 1 && h !== null && m !== null) {
+        return `daily at ${time(h, m)}`;
+    }
+    // every N days at HH:MM (D>=2)
+    if (d !== null && d >= 2 && h !== null && m !== null) {
+        return `every ${d} days at ${time(h, m)}`;
+    }
+    // every N days (D>=1, time wildcards)
+    if (d !== null && d >= 1 && h === null && m === null) {
+        return d === 1 ? 'daily' : `every ${d} days`;
+    }
+    return 'custom';
+}

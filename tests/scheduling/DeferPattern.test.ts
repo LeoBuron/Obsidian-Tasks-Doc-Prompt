@@ -2,6 +2,7 @@ import {
     parseDeferInput,
     DeferPatternParseError,
     computeNextMatch,
+    formatDeferPattern,
     type DeferPattern,
 } from '../../src/scheduling/DeferPattern';
 
@@ -190,5 +191,39 @@ describe('computeNextMatch', () => {
             // Strictly greater than the *minute* — so this is 15:55.
             expect(next.getTime()).toBe(at(2026, 5, 7, 15, 55).getTime());
         });
+    });
+});
+
+describe('formatDeferPattern', () => {
+    test('+1 day at 09:00 → "daily at 9:00"', () => {
+        expect(formatDeferPattern({ daysFromNow: 1, hour: 9, minute: 0 })).toBe(
+            'daily at 9:00',
+        );
+    });
+    test('+7 days at 09:00 → "every 7 days at 9:00"', () => {
+        expect(formatDeferPattern({ daysFromNow: 7, hour: 9, minute: 0 })).toBe(
+            'every 7 days at 9:00',
+        );
+    });
+    test('wildcard everything except minute → "every :55"', () => {
+        expect(formatDeferPattern({ daysFromNow: null, hour: null, minute: 55 })).toBe(
+            'every :55',
+        );
+    });
+    test('wildcard day, fixed hour+minute → "every day at 9:00"', () => {
+        expect(formatDeferPattern({ daysFromNow: null, hour: 9, minute: 0 })).toBe(
+            'every day at 9:00',
+        );
+    });
+    test('fixed day with wildcard time → "every N days"', () => {
+        expect(formatDeferPattern({ daysFromNow: 3, hour: null, minute: null })).toBe(
+            'every 3 days',
+        );
+    });
+    test('all-zero zero day, no recurrence-y meaning → fallback "custom"', () => {
+        // Pattern that survived parser but is degenerate as a recurrence.
+        expect(formatDeferPattern({ daysFromNow: 0, hour: 0, minute: 0 })).toBe(
+            'custom',
+        );
     });
 });
