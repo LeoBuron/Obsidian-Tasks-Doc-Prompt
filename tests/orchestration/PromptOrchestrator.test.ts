@@ -271,9 +271,9 @@ describe('PromptOrchestrator', () => {
             now: () => 1_000_000,
         });
         const ev = makeEvent('- [x] task');
+        const id = (await import('../../src/identity/TaskIdentity')).computeId(ev);
         await orch.handle(ev);
         await orch.drainForTest();
-        const id = (await import('../../src/identity/TaskIdentity')).computeId(ev);
         const entry = store.getDeferredById(id)!;
         expect(entry.remindAt).toBe(1_000_000 + 60 * 60_000);
         expect(entry.recurrence).toBeUndefined();

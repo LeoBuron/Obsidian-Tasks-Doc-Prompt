@@ -121,8 +121,7 @@ export class PromptOrchestrator {
             const result = await this.modalShow(item.event.taskLine);
 
             if (result.kind === 'cancel') {
-                return; // edit-mode no-op; the source path that produces
-                        // 'cancel' from the regular flow does not exist.
+                return; // edit-mode: user dismissed without acting; store is left untouched.
             }
 
             if (result.kind === 'save') {
