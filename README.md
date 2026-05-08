@@ -77,14 +77,35 @@ pattern; Cancel removes the entry.
 
 ## Installation
 
-This plugin is not in the community store yet. To install manually:
+This plugin is not in the official community store yet. There are two ways to
+install it.
 
-1. Build the plugin: `npm install && npm run build` (produces `main.js`).
-2. Copy `main.js`, `manifest.json`, and (optionally) `styles.css` into
-   `<vault>/.obsidian/plugins/tasks-doc-prompt/`.
-3. In Obsidian: Settings → Community plugins → enable **Tasks Doc-Prompt**.
+### Option A — BRAT (recommended)
 
-Requires Obsidian 1.5.0 or later.
+[BRAT](https://github.com/TfTHacker/obsidian42-brat) is a community plugin that
+installs and auto-updates plugins from any GitHub repository.
+
+1. Install **BRAT** from the community store and enable it.
+2. Open the BRAT settings → *Add Beta plugin*.
+3. Paste the repository path: `LeoBuron/Obsidian-Tasks-Doc-Prompt-`
+4. Confirm. BRAT downloads the latest release and installs it under
+   `.obsidian/plugins/tasks-doc-prompt/`.
+5. Settings → Community plugins → enable **Tasks Doc-Prompt**.
+
+BRAT will track new GitHub releases and offer to update the plugin
+automatically.
+
+### Option B — Manual install
+
+1. Download `main.js`, `manifest.json`, and `versions.json` from the
+   [latest release](https://github.com/LeoBuron/Obsidian-Tasks-Doc-Prompt-/releases/latest).
+2. Copy them into `<vault>/.obsidian/plugins/tasks-doc-prompt/`.
+3. Settings → Community plugins → enable **Tasks Doc-Prompt**.
+
+Or build from source: `npm install && npm run build` produces `main.js`.
+
+Requires Obsidian 1.5.0 or later. Desktop-only for now (mobile-tested in a
+future release).
 
 ## Settings
 
