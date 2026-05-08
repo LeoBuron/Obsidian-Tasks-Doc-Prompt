@@ -5,6 +5,7 @@ import { SkipStateStore, type DeferredEntry } from '../persistence/SkipStateStor
 import { computeId } from '../identity/TaskIdentity';
 import { ModalQueue } from './ModalQueue';
 import type { ModalResult } from '../ui/DocumentationModal';
+import { computeNextMatch } from '../scheduling/DeferPattern';
 
 export type ModalShow = (taskLine: string) => Promise<ModalResult>;
 
@@ -75,6 +76,20 @@ export class PromptOrchestrator {
         for (const entry of all) this.tryEnqueueDeferred(entry);
     }
 
+    /**
+     * Mark a taskId as in-flight from an out-of-band edit (e.g., the
+     * SettingsTab's edit modal). While the id is in-flight, `checkDeferred`
+     * and `processAllDeferred` will not enqueue it. Pair with `endEdit` in a
+     * try/finally.
+     */
+    beginEdit(taskId: string): void {
+        this.inFlight.add(taskId);
+    }
+
+    endEdit(taskId: string): void {
+        this.inFlight.delete(taskId);
+    }
+
     drainForTest(): Promise<void> {
         return this.queue.drainForTest();
     }
@@ -113,24 +128,57 @@ export class PromptOrchestrator {
 
     private async process(item: QueueItem): Promise<void> {
         try {
+            // Capture the current entry *before* the modal opens. If the user
+            // clicks plain "Not now" on a recurring entry, we need the pattern
+            // to compute the next match (preservation rule 1).
+            const existing = this.skipStore.getDeferredById(item.id);
             const result = await this.modalShow(item.event.taskLine);
+
+            if (result.kind === 'cancel') {
+                return; // edit-mode: user dismissed without acting; store is left untouched.
+            }
+
             if (result.kind === 'save') {
                 await this.writer.write(item.event, result.text);
                 this.skipStore.removeDeferred(item.id);
-            } else if (result.kind === 'defer') {
-                const remindAt = this.now() + this.settings.defaultDeferDurationMinutes * 60_000;
-                this.skipStore.markDeferred(item.id, {
-                    filePath: item.event.file.path,
-                    lineNumber: item.event.lineNumber,
-                    taskLine: item.event.taskLine,
-                }, remindAt);
-            } else {
+                return;
+            }
+
+            if (result.kind === 'permanent-skip') {
                 this.skipStore.markPermanent(item.id, {
                     label: item.event.taskLine,
                     filePath: item.event.file.path,
                 });
                 this.skipStore.removeDeferred(item.id);
+                return;
             }
+
+            // result.kind === 'defer'
+            let remindAt = result.remindAt;
+            let recurrence = result.recurrence;
+            if (remindAt === undefined) {
+                // "Not now" fastpath
+                if (existing?.recurrence) {
+                    remindAt = computeNextMatch(existing.recurrence, new Date(this.now()));
+                    recurrence = existing.recurrence;
+                } else {
+                    remindAt = this.now() + this.settings.defaultDeferDurationMinutes * 60_000;
+                    // recurrence stays undefined
+                }
+            }
+            // When remindAt is given, recurrence is taken from the result as-is
+            // (undefined intentionally clears any prior recurrence — rule 3).
+
+            this.skipStore.markDeferred(
+                item.id,
+                {
+                    filePath: item.event.file.path,
+                    lineNumber: item.event.lineNumber,
+                    taskLine: item.event.taskLine,
+                },
+                remindAt,
+                recurrence,
+            );
         } finally {
             this.inFlight.delete(item.id);
         }

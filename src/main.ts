@@ -57,7 +57,31 @@ export default class DocPromptPlugin extends Plugin {
             saveSettings: () => this.saveSettings(),
             listPermanentSkips: () => this.skipStore.listPermanent(),
             removePermanentSkip: (id) => this.skipStore.removePermanent(id),
-            deferredCount: () => this.skipStore.getDeferred().length,
+            listDeferred: () => this.skipStore.getDeferred(),
+            cancelDeferred: (id) => this.skipStore.removeDeferred(id),
+            editDeferred: async (entry) => {
+                this.orchestrator.beginEdit(entry.taskId);
+                try {
+                    const modal = new DocumentationModal(
+                        this.app,
+                        entry.snapshot.taskLine,
+                        { remindAt: entry.remindAt, recurrence: entry.recurrence },
+                    );
+                    const result = await modal.show();
+                    if (result.kind === 'defer' && result.remindAt !== undefined) {
+                        const live = this.skipStore.getDeferredById(entry.taskId);
+                        this.skipStore.markDeferred(
+                            entry.taskId,
+                            live?.snapshot ?? entry.snapshot,
+                            result.remindAt,
+                            result.recurrence,
+                        );
+                    }
+                    // 'cancel' → no change. Other kinds are unreachable in edit mode.
+                } finally {
+                    this.orchestrator.endEdit(entry.taskId);
+                }
+            },
             processAllDeferred: () => this.orchestrator.processAllDeferred(),
         }));
 

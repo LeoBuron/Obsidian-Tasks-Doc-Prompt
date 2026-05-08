@@ -230,6 +230,154 @@ describe('PromptOrchestrator', () => {
         expect(modalOpenCount).toBe(1);
     });
 
+    test('preservation rule 1: "Not now" on recurring entry preserves pattern', async () => {
+        const store = await makeStore();
+        const orch = new PromptOrchestrator({
+            app: fakeApp,
+            settings: { ...DEFAULT_SETTINGS, defaultDeferDurationMinutes: 60 },
+            skipStore: store,
+            modalShow: async () => ({ kind: 'defer' }), // "Not now"
+            writer: { write: async () => {} },
+            now: () => new Date(2026, 4, 7, 9, 5).getTime(), // 09:05
+        });
+        const ev = makeEvent('- [x] task');
+        const id = (await import('../../src/identity/TaskIdentity')).computeId(ev);
+
+        // Pre-existing recurring entry: every day at 09:00.
+        store.markDeferred(
+            id,
+            { filePath: ev.file.path, lineNumber: 0, taskLine: ev.taskLine },
+            new Date(2026, 4, 7, 9, 0).getTime(),
+            { daysFromNow: null, hour: 9, minute: 0 },
+        );
+
+        await orch.handle(ev);
+        await orch.drainForTest();
+
+        const updated = store.getDeferredById(id)!;
+        expect(updated.recurrence).toEqual({ daysFromNow: null, hour: 9, minute: 0 });
+        // Next match after 09:05 is tomorrow 09:00.
+        expect(updated.remindAt).toBe(new Date(2026, 4, 8, 9, 0).getTime());
+    });
+
+    test('preservation rule 2: "Not now" with no existing recurrence falls back to default duration', async () => {
+        const store = await makeStore();
+        const orch = new PromptOrchestrator({
+            app: fakeApp,
+            settings: { ...DEFAULT_SETTINGS, defaultDeferDurationMinutes: 60 },
+            skipStore: store,
+            modalShow: async () => ({ kind: 'defer' }),
+            writer: { write: async () => {} },
+            now: () => 1_000_000,
+        });
+        const ev = makeEvent('- [x] task');
+        const id = (await import('../../src/identity/TaskIdentity')).computeId(ev);
+        await orch.handle(ev);
+        await orch.drainForTest();
+        const entry = store.getDeferredById(id)!;
+        expect(entry.remindAt).toBe(1_000_000 + 60 * 60_000);
+        expect(entry.recurrence).toBeUndefined();
+    });
+
+    test('preservation rule 3: preset (remindAt without recurrence) overrides existing recurrence', async () => {
+        const store = await makeStore();
+        const orch = new PromptOrchestrator({
+            app: fakeApp,
+            settings: { ...DEFAULT_SETTINGS, defaultDeferDurationMinutes: 60 },
+            skipStore: store,
+            modalShow: async () => ({ kind: 'defer', remindAt: 5_000_000 }),
+            writer: { write: async () => {} },
+            now: () => 1_000_000,
+        });
+        const ev = makeEvent('- [x] task');
+        const id = (await import('../../src/identity/TaskIdentity')).computeId(ev);
+        // existing recurrence
+        store.markDeferred(
+            id,
+            { filePath: ev.file.path, lineNumber: 0, taskLine: ev.taskLine },
+            2_000_000,
+            { daysFromNow: 1, hour: 9, minute: 0 },
+        );
+        await orch.handle(ev);
+        await orch.drainForTest();
+        const entry = store.getDeferredById(id)!;
+        expect(entry.remindAt).toBe(5_000_000);
+        expect(entry.recurrence).toBeUndefined();
+    });
+
+    test('preservation rule 4: full custom (remindAt + recurrence) overrides existing recurrence', async () => {
+        const store = await makeStore();
+        const newPattern = { daysFromNow: null, hour: null, minute: 55 } as const;
+        const orch = new PromptOrchestrator({
+            app: fakeApp,
+            settings: { ...DEFAULT_SETTINGS, defaultDeferDurationMinutes: 60 },
+            skipStore: store,
+            modalShow: async () => ({ kind: 'defer', remindAt: 5_000_000, recurrence: { ...newPattern } }),
+            writer: { write: async () => {} },
+            now: () => 1_000_000,
+        });
+        const ev = makeEvent('- [x] task');
+        const id = (await import('../../src/identity/TaskIdentity')).computeId(ev);
+        store.markDeferred(
+            id,
+            { filePath: ev.file.path, lineNumber: 0, taskLine: ev.taskLine },
+            2_000_000,
+            { daysFromNow: 1, hour: 9, minute: 0 },
+        );
+        await orch.handle(ev);
+        await orch.drainForTest();
+        const entry = store.getDeferredById(id)!;
+        expect(entry.remindAt).toBe(5_000_000);
+        expect(entry.recurrence).toEqual(newPattern);
+    });
+
+    test("'cancel' result is a no-op (used only by edit-mode)", async () => {
+        const store = await makeStore();
+        const orch = new PromptOrchestrator({
+            app: fakeApp,
+            settings: { ...DEFAULT_SETTINGS },
+            skipStore: store,
+            modalShow: async () => ({ kind: 'cancel' }),
+            writer: { write: async () => {} },
+            now: () => 0,
+        });
+        const ev = makeEvent('- [x] task');
+        const id = (await import('../../src/identity/TaskIdentity')).computeId(ev);
+        // Pre-existing entry
+        store.markDeferred(id, { filePath: ev.file.path, lineNumber: 0, taskLine: ev.taskLine }, 100);
+        await orch.handle(ev);
+        await orch.drainForTest();
+        // Entry untouched
+        const entry = store.getDeferredById(id)!;
+        expect(entry.remindAt).toBe(100);
+    });
+
+    test('beginEdit blocks checkDeferred from opening a duplicate modal', async () => {
+        const store = await makeStore();
+        let modalOpenCount = 0;
+        const orch = new PromptOrchestrator({
+            app: fakeApp,
+            settings: { ...DEFAULT_SETTINGS },
+            skipStore: store,
+            modalShow: async () => { modalOpenCount++; return { kind: 'permanent-skip' }; },
+            writer: { write: async () => {} },
+            now: () => 1000,
+        });
+        store.markDeferred('id-x', { filePath: 'A.md', lineNumber: 1, taskLine: '- [x] x' }, 100);
+
+        // Simulate the SettingsTab edit modal taking the lock.
+        orch.beginEdit('id-x');
+        orch.checkDeferred();
+        await orch.drainForTest();
+        expect(modalOpenCount).toBe(0);
+
+        // Edit completes; lock released; next tick can enqueue.
+        orch.endEdit('id-x');
+        orch.checkDeferred();
+        await orch.drainForTest();
+        expect(modalOpenCount).toBe(1);
+    });
+
     test('drops deferred entries whose source file no longer exists', async () => {
         const store = await makeStore();
         const seen: string[] = [];
