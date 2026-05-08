@@ -1,7 +1,7 @@
 {
   "id": "tasks-doc-prompt",
   "name": "Tasks Doc-Prompt",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "minAppVersion": "1.5.0",
   "description": "When a task is completed, prompt for a short documentation paragraph saved as an indented sub-bullet.",
   "author": "Leo Buron",
