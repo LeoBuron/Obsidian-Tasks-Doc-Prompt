@@ -67,9 +67,12 @@ export default class DocPromptPlugin extends Plugin {
                 );
                 const result = await modal.show();
                 if (result.kind === 'defer' && result.remindAt !== undefined) {
+                    // Re-read in case the entry was concurrently re-enqueued
+                    // by the orchestrator while the modal was open.
+                    const live = this.skipStore.getDeferredById(entry.taskId);
                     this.skipStore.markDeferred(
                         entry.taskId,
-                        entry.snapshot,
+                        live?.snapshot ?? entry.snapshot,
                         result.remindAt,
                         result.recurrence,
                     );
