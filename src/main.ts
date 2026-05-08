@@ -60,24 +60,27 @@ export default class DocPromptPlugin extends Plugin {
             listDeferred: () => this.skipStore.getDeferred(),
             cancelDeferred: (id) => this.skipStore.removeDeferred(id),
             editDeferred: async (entry) => {
-                const modal = new DocumentationModal(
-                    this.app,
-                    entry.snapshot.taskLine,
-                    { remindAt: entry.remindAt, recurrence: entry.recurrence },
-                );
-                const result = await modal.show();
-                if (result.kind === 'defer' && result.remindAt !== undefined) {
-                    // Re-read in case the entry was concurrently re-enqueued
-                    // by the orchestrator while the modal was open.
-                    const live = this.skipStore.getDeferredById(entry.taskId);
-                    this.skipStore.markDeferred(
-                        entry.taskId,
-                        live?.snapshot ?? entry.snapshot,
-                        result.remindAt,
-                        result.recurrence,
+                this.orchestrator.beginEdit(entry.taskId);
+                try {
+                    const modal = new DocumentationModal(
+                        this.app,
+                        entry.snapshot.taskLine,
+                        { remindAt: entry.remindAt, recurrence: entry.recurrence },
                     );
+                    const result = await modal.show();
+                    if (result.kind === 'defer' && result.remindAt !== undefined) {
+                        const live = this.skipStore.getDeferredById(entry.taskId);
+                        this.skipStore.markDeferred(
+                            entry.taskId,
+                            live?.snapshot ?? entry.snapshot,
+                            result.remindAt,
+                            result.recurrence,
+                        );
+                    }
+                    // 'cancel' → no change. Other kinds are unreachable in edit mode.
+                } finally {
+                    this.orchestrator.endEdit(entry.taskId);
                 }
-                // 'cancel' → no change. Other kinds are unreachable in edit mode.
             },
             processAllDeferred: () => this.orchestrator.processAllDeferred(),
         }));

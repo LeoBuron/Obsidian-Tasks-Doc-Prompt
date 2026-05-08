@@ -352,6 +352,32 @@ describe('PromptOrchestrator', () => {
         expect(entry.remindAt).toBe(100);
     });
 
+    test('beginEdit blocks checkDeferred from opening a duplicate modal', async () => {
+        const store = await makeStore();
+        let modalOpenCount = 0;
+        const orch = new PromptOrchestrator({
+            app: fakeApp,
+            settings: { ...DEFAULT_SETTINGS },
+            skipStore: store,
+            modalShow: async () => { modalOpenCount++; return { kind: 'permanent-skip' }; },
+            writer: { write: async () => {} },
+            now: () => 1000,
+        });
+        store.markDeferred('id-x', { filePath: 'A.md', lineNumber: 1, taskLine: '- [x] x' }, 100);
+
+        // Simulate the SettingsTab edit modal taking the lock.
+        orch.beginEdit('id-x');
+        orch.checkDeferred();
+        await orch.drainForTest();
+        expect(modalOpenCount).toBe(0);
+
+        // Edit completes; lock released; next tick can enqueue.
+        orch.endEdit('id-x');
+        orch.checkDeferred();
+        await orch.drainForTest();
+        expect(modalOpenCount).toBe(1);
+    });
+
     test('drops deferred entries whose source file no longer exists', async () => {
         const store = await makeStore();
         const seen: string[] = [];

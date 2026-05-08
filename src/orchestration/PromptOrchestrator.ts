@@ -76,6 +76,20 @@ export class PromptOrchestrator {
         for (const entry of all) this.tryEnqueueDeferred(entry);
     }
 
+    /**
+     * Mark a taskId as in-flight from an out-of-band edit (e.g., the
+     * SettingsTab's edit modal). While the id is in-flight, `checkDeferred`
+     * and `processAllDeferred` will not enqueue it. Pair with `endEdit` in a
+     * try/finally.
+     */
+    beginEdit(taskId: string): void {
+        this.inFlight.add(taskId);
+    }
+
+    endEdit(taskId: string): void {
+        this.inFlight.delete(taskId);
+    }
+
     drainForTest(): Promise<void> {
         return this.queue.drainForTest();
     }
