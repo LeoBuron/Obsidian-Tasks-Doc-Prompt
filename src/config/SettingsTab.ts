@@ -1,11 +1,16 @@
 import { App, Plugin, PluginSettingTab, Setting, Notice } from 'obsidian';
 import type { DocPromptSettings } from './Settings';
+import type { DeferredEntry } from '../persistence/SkipStateStore';
+import { formatDeferPattern } from '../scheduling/DeferPattern';
 
 export interface SettingsTabHost {
     settings: DocPromptSettings;
     saveSettings(): Promise<void>;
     listPermanentSkips(): { taskId: string; label: string; filePath: string }[];
     removePermanentSkip(taskId: string): void;
+    listDeferred(): DeferredEntry[];
+    cancelDeferred(taskId: string): void;
+    editDeferred(entry: DeferredEntry): Promise<void>;
     deferredCount(): number;
     processAllDeferred(): void;
 }
@@ -88,14 +93,44 @@ export class DocPromptSettingsTab extends PluginSettingTab {
 
         // Deferred
         containerEl.createEl('h3', { text: 'Deferred tasks' });
+        const deferred = this.host.listDeferred();
         new Setting(containerEl)
-            .setName(`${this.host.deferredCount()} deferred entries`)
+            .setName(`${deferred.length} deferred entries`)
             .addButton((b: any) => {
                 b.setButtonText('Process all now').onClick(() => {
                     this.host.processAllDeferred();
                     new Notice('Queued all deferred entries.');
                 });
             });
+
+        if (deferred.length === 0) {
+            containerEl.createEl('div', { text: '(none)' });
+        } else {
+            for (const entry of deferred) {
+                const label = entry.snapshot.taskLine.length > 80
+                    ? entry.snapshot.taskLine.slice(0, 77) + '…'
+                    : entry.snapshot.taskLine;
+                const when = formatRemindAt(entry.remindAt, Date.now());
+                const recurrenceLabel = entry.recurrence
+                    ? `⟲ ${formatDeferPattern(entry.recurrence)}`
+                    : '·';
+                new Setting(containerEl)
+                    .setName(label)
+                    .setDesc(`${when}    ${recurrenceLabel}    ${entry.snapshot.filePath}`)
+                    .addButton((b: any) => {
+                        b.setButtonText('Edit').onClick(async () => {
+                            await this.host.editDeferred(entry);
+                            this.display();
+                        });
+                    })
+                    .addButton((b: any) => {
+                        b.setButtonText('Cancel').onClick(() => {
+                            this.host.cancelDeferred(entry.taskId);
+                            this.display();
+                        });
+                    });
+            }
+        }
 
         // Permanent skips
         containerEl.createEl('h3', { text: 'Permanently skipped' });
@@ -125,4 +160,23 @@ export class DocPromptSettingsTab extends PluginSettingTab {
                 t.setValue(false).setDisabled(true);
             });
     }
+}
+
+function formatRemindAt(remindAt: number, now: number): string {
+    const r = new Date(remindAt);
+    const n = new Date(now);
+    const sameDay = r.getFullYear() === n.getFullYear()
+        && r.getMonth() === n.getMonth()
+        && r.getDate() === n.getDate();
+    const tomorrow = new Date(n);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const isTomorrow = r.getFullYear() === tomorrow.getFullYear()
+        && r.getMonth() === tomorrow.getMonth()
+        && r.getDate() === tomorrow.getDate();
+    const hh = r.getHours();
+    const mm = r.getMinutes().toString().padStart(2, '0');
+    if (sameDay) return `today ${hh}:${mm}`;
+    if (isTomorrow) return `tomorrow ${hh}:${mm}`;
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${months[r.getMonth()]} ${r.getDate()}, ${hh}:${mm}`;
 }
