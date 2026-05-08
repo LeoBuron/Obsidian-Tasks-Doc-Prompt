@@ -87,7 +87,7 @@ installs and auto-updates plugins from any GitHub repository.
 
 1. Install **BRAT** from the community store and enable it.
 2. Open the BRAT settings → *Add Beta plugin*.
-3. Paste the repository path: `LeoBuron/Obsidian-Tasks-Doc-Prompt-`
+3. Paste the repository path: `LeoBuron/Obsidian-Tasks-Doc-Prompt`
 4. Confirm. BRAT downloads the latest release and installs it under
    `.obsidian/plugins/tasks-doc-prompt/`.
 5. Settings → Community plugins → enable **Tasks Doc-Prompt**.
@@ -98,7 +98,7 @@ automatically.
 ### Option B — Manual install
 
 1. Download `main.js`, `manifest.json`, and `versions.json` from the
-   [latest release](https://github.com/LeoBuron/Obsidian-Tasks-Doc-Prompt-/releases/latest).
+   [latest release](https://github.com/LeoBuron/Obsidian-Tasks-Doc-Prompt/releases/latest).
 2. Copy them into `<vault>/.obsidian/plugins/tasks-doc-prompt/`.
 3. Settings → Community plugins → enable **Tasks Doc-Prompt**.
 
