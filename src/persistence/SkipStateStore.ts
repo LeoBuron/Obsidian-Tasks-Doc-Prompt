@@ -1,3 +1,5 @@
+import type { DeferPattern } from '../scheduling/DeferPattern';
+
 const CURRENT_SCHEMA = 1 as const;
 
 export interface DeferredEntry {
@@ -5,6 +7,7 @@ export interface DeferredEntry {
     snapshot: { filePath: string; lineNumber: number; taskLine: string };
     deferredAt: number;
     remindAt: number;
+    recurrence?: DeferPattern;
 }
 
 export interface PermanentEntry {
@@ -88,13 +91,16 @@ export class SkipStateStore {
         taskId: string,
         snapshot: DeferredEntry['snapshot'],
         remindAt: number,
+        recurrence?: DeferPattern,
     ): void {
-        this.state.deferred[taskId] = {
+        const entry: DeferredEntry = {
             taskId,
             snapshot,
             deferredAt: Date.now(),
             remindAt,
         };
+        if (recurrence !== undefined) entry.recurrence = recurrence;
+        this.state.deferred[taskId] = entry;
         this.scheduleSave();
     }
 
@@ -105,6 +111,10 @@ export class SkipStateStore {
 
     getDeferred(): DeferredEntry[] {
         return Object.values(this.state.deferred);
+    }
+
+    getDeferredById(taskId: string): DeferredEntry | undefined {
+        return this.state.deferred[taskId];
     }
 
     /**

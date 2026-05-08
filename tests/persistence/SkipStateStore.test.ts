@@ -108,4 +108,86 @@ describe('SkipStateStore', () => {
         expect(saveCount).toBe(1);
         expect(Object.keys(p.stored.permanent).sort()).toEqual(['a', 'b', 'c']);
     });
+
+    test('markDeferred accepts an optional recurrence pattern', async () => {
+        const store = await SkipStateStore.load(new MemoryPersistence());
+        store.markDeferred(
+            'id-r',
+            { filePath: 'A.md', lineNumber: 1, taskLine: 't' },
+            1_000_000,
+            { daysFromNow: null, hour: null, minute: 55 },
+        );
+        const [entry] = store.getDeferred();
+        expect(entry.recurrence).toEqual({ daysFromNow: null, hour: null, minute: 55 });
+    });
+
+    test('markDeferred without recurrence omits the field', async () => {
+        const store = await SkipStateStore.load(new MemoryPersistence());
+        store.markDeferred('id-x', { filePath: 'A.md', lineNumber: 1, taskLine: 't' }, 1_000_000);
+        const [entry] = store.getDeferred();
+        expect(entry.recurrence).toBeUndefined();
+    });
+
+    test('markDeferred overwriting clears previous recurrence when 4th arg is undefined', async () => {
+        const store = await SkipStateStore.load(new MemoryPersistence());
+        const snap = { filePath: 'A.md', lineNumber: 1, taskLine: 't' };
+        store.markDeferred('id-r', snap, 1_000_000, { daysFromNow: 1, hour: 9, minute: 0 });
+        store.markDeferred('id-r', snap, 2_000_000); // no recurrence
+        const [entry] = store.getDeferred();
+        expect(entry.remindAt).toBe(2_000_000);
+        expect(entry.recurrence).toBeUndefined();
+    });
+
+    test('getDeferredById returns the entry by taskId', async () => {
+        const store = await SkipStateStore.load(new MemoryPersistence());
+        store.markDeferred('id-r', { filePath: 'A.md', lineNumber: 1, taskLine: 't' }, 100, {
+            daysFromNow: null, hour: 9, minute: 0,
+        });
+        const found = store.getDeferredById('id-r');
+        expect(found?.taskId).toBe('id-r');
+        expect(found?.recurrence).toEqual({ daysFromNow: null, hour: 9, minute: 0 });
+    });
+
+    test('getDeferredById returns undefined for unknown id', async () => {
+        const store = await SkipStateStore.load(new MemoryPersistence());
+        expect(store.getDeferredById('nope')).toBeUndefined();
+    });
+
+    test('roundtrip preserves recurrence through persistence', async () => {
+        const p = new MemoryPersistence();
+        const a = await SkipStateStore.load(p);
+        a.markDeferred(
+            'id-r',
+            { filePath: 'A.md', lineNumber: 1, taskLine: 't' },
+            1_000_000,
+            { daysFromNow: 1, hour: 9, minute: 0 },
+        );
+        jest.advanceTimersByTime(500);
+        await Promise.resolve();
+        const b = await SkipStateStore.load(p);
+        const found = b.getDeferredById('id-r');
+        expect(found?.recurrence).toEqual({ daysFromNow: 1, hour: 9, minute: 0 });
+    });
+
+    test('backwards compat: schemaVersion=1 entries without recurrence load cleanly', async () => {
+        const p = new MemoryPersistence();
+        // Hand-craft a v1 payload with the pre-recurrence shape.
+        p.stored = {
+            schemaVersion: 1,
+            permanent: {},
+            deferred: {
+                'old-id': {
+                    taskId: 'old-id',
+                    snapshot: { filePath: 'A.md', lineNumber: 0, taskLine: 't' },
+                    deferredAt: 100,
+                    remindAt: 200,
+                    // no `recurrence` field
+                },
+            },
+        };
+        const store = await SkipStateStore.load(p);
+        const found = store.getDeferredById('old-id');
+        expect(found?.remindAt).toBe(200);
+        expect(found?.recurrence).toBeUndefined();
+    });
 });
