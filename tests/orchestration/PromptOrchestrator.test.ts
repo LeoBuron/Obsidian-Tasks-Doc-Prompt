@@ -421,7 +421,7 @@ describe('PromptOrchestrator', () => {
         store.markDeferred('id-gone', { filePath: 'Deleted.md', lineNumber: 1, taskLine: '- [x] gone' }, 100);
         // Silence the warning for this test.
         const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
-        orch.checkDeferred();
+        await orch.checkDeferred();
         await orch.drainForTest();
         expect(seen).toEqual([]);
         // Entry was removed from the store so it doesn't keep retrying.
