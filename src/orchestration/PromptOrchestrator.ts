@@ -6,6 +6,8 @@ import { computeId } from '../identity/TaskIdentity';
 import { ModalQueue } from './ModalQueue';
 import type { ModalResult } from '../ui/DocumentationModal';
 import { computeNextMatch } from '../scheduling/DeferPattern';
+import { lookupTaskById } from '../detection/TaskLookup';
+import type { LookupResult } from '../detection/TaskLookup';
 
 export type ModalShow = (taskLine: string) => Promise<ModalResult>;
 
@@ -66,14 +68,14 @@ export class PromptOrchestrator {
         this.queue.enqueue({ event, id });
     }
 
-    checkDeferred(): void {
+    async checkDeferred(): Promise<void> {
         const due = this.skipStore.getDueDeferred(this.now());
-        for (const entry of due) this.tryEnqueueDeferred(entry);
+        for (const entry of due) await this.tryEnqueueDeferred(entry);
     }
 
-    processAllDeferred(): void {
+    async processAllDeferred(): Promise<void> {
         const all = this.skipStore.getDeferred();
-        for (const entry of all) this.tryEnqueueDeferred(entry);
+        for (const entry of all) await this.tryEnqueueDeferred(entry);
     }
 
     /**
@@ -94,26 +96,57 @@ export class PromptOrchestrator {
         return this.queue.drainForTest();
     }
 
-    private tryEnqueueDeferred(entry: DeferredEntry): void {
+    private async tryEnqueueDeferred(entry: DeferredEntry): Promise<void> {
         if (this.inFlight.has(entry.taskId)) return;
-        const file = this.app.vault.getFileByPath(entry.snapshot.filePath);
-        if (!file) {
-            // Source file is gone (deleted/moved since defer). Drop the
-            // entry so we don't keep retrying every minute.
+        // Reserve the id BEFORE the lookup. Two concurrent triggers
+        // (periodic tick + ribbon click) could otherwise both pass the
+        // membership check and run duplicate lookups for the same entry.
+        this.inFlight.add(entry.taskId);
+
+        let result: LookupResult;
+        try {
+            result = await lookupTaskById(
+                this.app,
+                entry.snapshot.filePath,
+                entry.taskId,
+                this.settings.doneStatusSymbols,
+            );
+        } catch (err) {
+            this.inFlight.delete(entry.taskId);
             console.warn(
-                `[tasks-doc-prompt] Dropping deferred entry for missing file: ${entry.snapshot.filePath}`,
+                `[tasks-doc-prompt] Deferred lookup failed for ${entry.taskId}; will retry next tick.`,
+                err,
+            );
+            return;
+        }
+
+        if (result.kind === 'not-found') {
+            this.inFlight.delete(entry.taskId);
+            console.warn(
+                `[tasks-doc-prompt] Dropping deferred entry; task no longer present: ${entry.taskId} (${entry.snapshot.filePath})`,
             );
             this.skipStore.removeDeferred(entry.taskId);
             return;
         }
+
+        if (result.kind === 'open') {
+            this.inFlight.delete(entry.taskId);
+            console.warn(
+                `[tasks-doc-prompt] Dropping deferred entry; task no longer in done state: ${entry.taskId}`,
+            );
+            this.skipStore.removeDeferred(entry.taskId);
+            return;
+        }
+
+        // result.kind === 'done' — fire with current state, not the captured
+        // snapshot. inFlight is kept; process() releases it in its finally.
         const ev: CompletionEvent = {
-            file: file as TFile,
-            lineNumber: entry.snapshot.lineNumber,
-            taskLine: entry.snapshot.taskLine,
+            file: result.file,
+            lineNumber: result.lineNumber,
+            taskLine: result.taskLine,
             previousStatus: ' ',
-            newStatus: 'x',
+            newStatus: result.statusSymbol,
         };
-        this.inFlight.add(entry.taskId);
         this.queue.enqueue({ event: ev, id: entry.taskId });
     }
 

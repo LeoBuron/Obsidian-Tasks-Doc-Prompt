@@ -3,14 +3,32 @@ import { PromptOrchestrator } from '../../src/orchestration/PromptOrchestrator';
 import { SkipStateStore } from '../../src/persistence/SkipStateStore';
 import { DEFAULT_SETTINGS } from '../../src/config/Settings';
 import type { CompletionEvent } from '../../src/detection/types';
+import { computeIdFromLine } from '../../src/identity/TaskIdentity';
 
 const makeStore = async () => SkipStateStore.load({ load: async () => null, save: async () => {} });
 
-// Minimal App stub: vault.getFileByPath returns a fresh TFile for any path,
-// matching the contract that the file exists.
-const fakeApp = {
-    vault: { getFileByPath: (p: string) => new TFile(p) },
-} as any;
+function makeApp(initialFiles: Record<string, string> = {}) {
+    const files: Record<string, string> = { ...initialFiles };
+    return {
+        vault: {
+            // Keep the legacy "always returns a TFile" behavior so existing
+            // tests don't need rewriting. New tests that need vault.read
+            // register file content via initialFiles or setFile.
+            getFileByPath: (p: string) => new TFile(p),
+            read: async (file: TFile) => {
+                const content = files[file.path];
+                if (content === undefined) {
+                    throw new Error(`No content registered for ${file.path}`);
+                }
+                return content;
+            },
+        },
+        // Test-only escape hatch — not part of the App interface.
+        setFile: (p: string, content: string) => { files[p] = content; },
+    } as any;
+}
+
+const fakeApp = makeApp(); // default for existing tests
 
 function makeEvent(line: string, path = 'Work/notes.md'): CompletionEvent {
     return {
@@ -140,8 +158,10 @@ describe('PromptOrchestrator', () => {
         // store currently holds. If the entry were removed at enqueue-time
         // (the bug), this would be 1 instead of 2.
         const deferredCountDuringModal: number[] = [];
+        const idA = computeIdFromLine('A.md', '- [x] a');
+        const idB = computeIdFromLine('A.md', '- [x] b');
         const orch = new PromptOrchestrator({
-            app: fakeApp,
+            app: makeApp({ 'A.md': '- [x] a\n- [x] b\n' }),
             settings: { ...DEFAULT_SETTINGS },
             skipStore: store,
             modalShow: async (taskLine) => {
@@ -152,11 +172,11 @@ describe('PromptOrchestrator', () => {
             writer: { write: async () => {} },
             now: () => 1000,
         });
-        store.markDeferred('id-a', { filePath: 'A.md', lineNumber: 1, taskLine: '- [x] a' }, 100);
-        store.markDeferred('id-b', { filePath: 'A.md', lineNumber: 2, taskLine: '- [x] b' }, 100_000);
-        orch.checkDeferred();
-        // Both entries still in the store at enqueue time (non-destructive read).
+        store.markDeferred(idA, { filePath: 'A.md', lineNumber: 0, taskLine: '- [x] a' }, 100);
+        store.markDeferred(idB, { filePath: 'A.md', lineNumber: 1, taskLine: '- [x] b' }, 100_000);
+        // Both entries still in the store before checkDeferred has a chance to drop them.
         expect(store.getDeferred()).toHaveLength(2);
+        await orch.checkDeferred();
         await orch.drainForTest();
         expect(seen).toEqual(['- [x] a']);
         // While the only-due modal was open, both entries were still on disk.
@@ -167,8 +187,10 @@ describe('PromptOrchestrator', () => {
         const store = await makeStore();
         const seen: string[] = [];
         const deferredCountDuringModal: number[] = [];
+        const idA = computeIdFromLine('A.md', '- [x] a');
+        const idB = computeIdFromLine('A.md', '- [x] b');
         const orch = new PromptOrchestrator({
-            app: fakeApp,
+            app: makeApp({ 'A.md': '- [x] a\n- [x] b\n' }),
             settings: { ...DEFAULT_SETTINGS },
             skipStore: store,
             modalShow: async (taskLine) => {
@@ -179,11 +201,11 @@ describe('PromptOrchestrator', () => {
             writer: { write: async () => {} },
             now: () => 1000,
         });
-        store.markDeferred('id-a', { filePath: 'A.md', lineNumber: 1, taskLine: '- [x] a' }, 100);
-        store.markDeferred('id-b', { filePath: 'A.md', lineNumber: 2, taskLine: '- [x] b' }, 100_000);
-        orch.processAllDeferred();
-        // Both entries still in the store at enqueue time (non-destructive read).
+        store.markDeferred(idA, { filePath: 'A.md', lineNumber: 0, taskLine: '- [x] a' }, 100);
+        store.markDeferred(idB, { filePath: 'A.md', lineNumber: 1, taskLine: '- [x] b' }, 100_000);
+        // Both entries still in the store before processAllDeferred has a chance to drop them.
         expect(store.getDeferred()).toHaveLength(2);
+        await orch.processAllDeferred();
         await orch.drainForTest();
         expect(seen.sort()).toEqual(['- [x] a', '- [x] b']);
         // First modal sees 2; by the time the second runs, the first has been
@@ -196,8 +218,9 @@ describe('PromptOrchestrator', () => {
         let release: () => void = () => {};
         const modalGate = new Promise<void>((resolve) => { release = resolve; });
         let modalOpenCount = 0;
+        const idA = computeIdFromLine('A.md', '- [x] a');
         const orch = new PromptOrchestrator({
-            app: fakeApp,
+            app: makeApp({ 'A.md': '- [x] a\n' }),
             settings: { ...DEFAULT_SETTINGS },
             skipStore: store,
             modalShow: async () => {
@@ -208,11 +231,12 @@ describe('PromptOrchestrator', () => {
             writer: { write: async () => {} },
             now: () => 1000,
         });
-        store.markDeferred('id-a', { filePath: 'A.md', lineNumber: 1, taskLine: '- [x] a' }, 100);
+        store.markDeferred(idA, { filePath: 'A.md', lineNumber: 0, taskLine: '- [x] a' }, 100);
 
         // First tick — opens modal, which now blocks on modalGate.
         orch.checkDeferred();
         // Yield so the queue pumps and the modal opens.
+        await Promise.resolve();
         await Promise.resolve();
         await Promise.resolve();
         expect(modalOpenCount).toBe(1);
@@ -220,6 +244,7 @@ describe('PromptOrchestrator', () => {
         // Second tick — entry is still in the store (we held the modal), but
         // the orchestrator must not re-enqueue while in-flight.
         orch.checkDeferred();
+        await Promise.resolve();
         await Promise.resolve();
         await Promise.resolve();
         expect(modalOpenCount).toBe(1);
@@ -355,25 +380,26 @@ describe('PromptOrchestrator', () => {
     test('beginEdit blocks checkDeferred from opening a duplicate modal', async () => {
         const store = await makeStore();
         let modalOpenCount = 0;
+        const idX = computeIdFromLine('A.md', '- [x] x');
         const orch = new PromptOrchestrator({
-            app: fakeApp,
+            app: makeApp({ 'A.md': '- [x] x\n' }),
             settings: { ...DEFAULT_SETTINGS },
             skipStore: store,
             modalShow: async () => { modalOpenCount++; return { kind: 'permanent-skip' }; },
             writer: { write: async () => {} },
             now: () => 1000,
         });
-        store.markDeferred('id-x', { filePath: 'A.md', lineNumber: 1, taskLine: '- [x] x' }, 100);
+        store.markDeferred(idX, { filePath: 'A.md', lineNumber: 0, taskLine: '- [x] x' }, 100);
 
         // Simulate the SettingsTab edit modal taking the lock.
-        orch.beginEdit('id-x');
+        orch.beginEdit(idX);
         orch.checkDeferred();
         await orch.drainForTest();
         expect(modalOpenCount).toBe(0);
 
         // Edit completes; lock released; next tick can enqueue.
-        orch.endEdit('id-x');
-        orch.checkDeferred();
+        orch.endEdit(idX);
+        await orch.checkDeferred();
         await orch.drainForTest();
         expect(modalOpenCount).toBe(1);
     });
@@ -395,11 +421,182 @@ describe('PromptOrchestrator', () => {
         store.markDeferred('id-gone', { filePath: 'Deleted.md', lineNumber: 1, taskLine: '- [x] gone' }, 100);
         // Silence the warning for this test.
         const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
-        orch.checkDeferred();
+        await orch.checkDeferred();
         await orch.drainForTest();
         expect(seen).toEqual([]);
         // Entry was removed from the store so it doesn't keep retrying.
         expect(store.getDeferred()).toEqual([]);
         warn.mockRestore();
+    });
+
+    test('deferred entry drops when task is no longer in done state (issue #8)', async () => {
+        const path = 'Work/notes.md';
+        const triggerLine = '- [x] write report';
+        const store = await makeStore();
+        const writes: any[] = [];
+        const modalCalls: string[] = [];
+        const orch = new PromptOrchestrator({
+            app: makeApp({ [path]: '- [ ] write report\n' }), // user unchecked
+            settings: { ...DEFAULT_SETTINGS, doneStatusSymbols: ['x', 'X', '-'] },
+            skipStore: store,
+            modalShow: async (line) => { modalCalls.push(line); return { kind: 'save', text: 'doc' }; },
+            writer: { write: async (e, t) => { writes.push({ e, t }); } },
+            now: () => 1000,
+        });
+        const id = computeIdFromLine(path, triggerLine);
+        store.markDeferred(
+            id,
+            { filePath: path, lineNumber: 0, taskLine: triggerLine },
+            500, // remindAt in the past relative to now=1000
+        );
+        await orch.checkDeferred();
+        await orch.drainForTest();
+        expect(modalCalls).toHaveLength(0);
+        expect(writes).toHaveLength(0);
+        expect(store.getDeferredById(id)).toBeUndefined();
+    });
+
+    test('deferred entry fires with current state when task switched between done symbols', async () => {
+        const path = 'Work/notes.md';
+        const triggerLine = '- [x] write report';
+        const store = await makeStore();
+        const writes: any[] = [];
+        let receivedNewStatus = '';
+        const orch = new PromptOrchestrator({
+            app: makeApp({ [path]: '- [-] write report\n' }), // x → -
+            settings: { ...DEFAULT_SETTINGS, doneStatusSymbols: ['x', 'X', '-'] },
+            skipStore: store,
+            modalShow: async () => ({ kind: 'save', text: 'doc' }),
+            writer: { write: async (e, t) => { writes.push({ e, t }); receivedNewStatus = e.newStatus; } },
+            now: () => 1000,
+        });
+        const id = computeIdFromLine(path, triggerLine);
+        store.markDeferred(id, { filePath: path, lineNumber: 0, taskLine: triggerLine }, 500);
+        await orch.checkDeferred();
+        await orch.drainForTest();
+        expect(writes).toHaveLength(1);
+        expect(receivedNewStatus).toBe('-'); // current symbol, not the stale 'x'
+        expect(store.getDeferredById(id)).toBeUndefined();
+    });
+
+    test('deferred entry fires with current line number when task moved (latent line-drift fix)', async () => {
+        const path = 'Work/notes.md';
+        const triggerLine = '- [x] write report';
+        const store = await makeStore();
+        let receivedLine = -1;
+        const orch = new PromptOrchestrator({
+            app: makeApp({
+                [path]: `# Heading\nfiller\nfiller\n${triggerLine}\n`, // task now at line 3
+            }),
+            settings: { ...DEFAULT_SETTINGS, doneStatusSymbols: ['x', 'X', '-'] },
+            skipStore: store,
+            modalShow: async () => ({ kind: 'save', text: 'doc' }),
+            writer: { write: async (e) => { receivedLine = e.lineNumber; } },
+            now: () => 1000,
+        });
+        const id = computeIdFromLine(path, triggerLine);
+        store.markDeferred(id, { filePath: path, lineNumber: 0, taskLine: triggerLine }, 500);
+        await orch.checkDeferred();
+        await orch.drainForTest();
+        expect(receivedLine).toBe(3); // not the stale 0
+    });
+
+    test('deferred entry drops when task no longer present in file', async () => {
+        const path = 'Work/notes.md';
+        const triggerLine = '- [x] write report';
+        const store = await makeStore();
+        const modalCalls: string[] = [];
+        const orch = new PromptOrchestrator({
+            app: makeApp({ [path]: '\n' }), // task line deleted
+            settings: { ...DEFAULT_SETTINGS, doneStatusSymbols: ['x', 'X', '-'] },
+            skipStore: store,
+            modalShow: async (l) => { modalCalls.push(l); return { kind: 'save', text: '' }; },
+            writer: { write: async () => {} },
+            now: () => 1000,
+        });
+        const id = computeIdFromLine(path, triggerLine);
+        store.markDeferred(id, { filePath: path, lineNumber: 0, taskLine: triggerLine }, 500);
+        await orch.checkDeferred();
+        await orch.drainForTest();
+        expect(modalCalls).toHaveLength(0);
+        expect(store.getDeferredById(id)).toBeUndefined();
+    });
+
+    test('deferred entry stays in store and inFlight is released when lookup throws', async () => {
+        const path = 'Work/notes.md';
+        const triggerLine = '- [x] write report';
+        const store = await makeStore();
+        let readCalls = 0;
+        const orch = new PromptOrchestrator({
+            app: {
+                vault: {
+                    getFileByPath: (p: string) => new TFile(p),
+                    read: async () => { readCalls++; throw new Error('boom'); },
+                },
+            } as any,
+            settings: { ...DEFAULT_SETTINGS, doneStatusSymbols: ['x', 'X', '-'] },
+            skipStore: store,
+            modalShow: async () => ({ kind: 'save', text: '' }),
+            writer: { write: async () => {} },
+            now: () => 1000,
+        });
+        const id = computeIdFromLine(path, triggerLine);
+        store.markDeferred(id, { filePath: path, lineNumber: 0, taskLine: triggerLine }, 500);
+
+        await orch.checkDeferred();
+        expect(readCalls).toBe(1);
+        expect(store.getDeferredById(id)).toBeDefined(); // entry preserved for retry
+
+        // Second tick: id must NOT be locked in inFlight from the previous
+        // failed attempt — otherwise no retry would happen.
+        await orch.checkDeferred();
+        expect(readCalls).toBe(2); // proves inFlight was released after the first throw
+    });
+
+    test('end-to-end: defer x → uncheck → fire timer → no modal, store empty (issue #8 repro)', async () => {
+        const path = 'Work/notes.md';
+        const store = await makeStore();
+        const modalCalls: string[] = [];
+        const writes: any[] = [];
+        const app = makeApp({ [path]: '- [x] write report\n' });
+
+        const orch = new PromptOrchestrator({
+            app,
+            settings: { ...DEFAULT_SETTINGS, doneStatusSymbols: ['x', 'X', '-'] },
+            skipStore: store,
+            modalShow: async (l) => {
+                modalCalls.push(l);
+                // First (initial) call → defer; second call would be the bug.
+                if (modalCalls.length === 1) {
+                    return { kind: 'defer', remindAt: 500 };
+                }
+                return { kind: 'save', text: 'doc' };
+            },
+            writer: { write: async (e, t) => { writes.push({ e, t }); } },
+            now: () => 1000,
+        });
+        const id = computeIdFromLine(path, '- [x] write report');
+        await orch.handle({
+            file: new TFile(path),
+            lineNumber: 0,
+            taskLine: '- [x] write report',
+            previousStatus: ' ',
+            newStatus: 'x',
+        });
+        await orch.drainForTest();
+        expect(store.getDeferredById(id)).toBeDefined();
+        expect(modalCalls).toHaveLength(1);
+
+        // User unchecks the task. Mutate the fake vault content in place.
+        app.setFile(path, '- [ ] write report\n');
+
+        // Defer time elapses; the periodic tick fires.
+        await orch.checkDeferred();
+        await orch.drainForTest();
+
+        // The fix: no second modal call, no write, store is empty.
+        expect(modalCalls).toHaveLength(1);
+        expect(writes).toHaveLength(0);
+        expect(store.getDeferredById(id)).toBeUndefined();
     });
 });

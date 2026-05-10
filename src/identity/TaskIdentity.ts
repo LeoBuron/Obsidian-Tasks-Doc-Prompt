@@ -12,7 +12,7 @@ const EMOJI_RE = new RegExp(
 
 const DV_FIELD_RE = /\[[a-zA-Z][\w-]*::[^\]]*\]/g;
 const STATUS_RE = /^\s*[-*+]\s*\[[^\]]\]\s*/;
-const BLOCK_ID_RE = /\s*\^[A-Za-z0-9-]+\s*$/;
+const BLOCK_ID_RE = /\s*\^([A-Za-z0-9-]+)\s*$/;
 
 export function stripTasksFields(taskLine: string): string {
     let s = taskLine;
@@ -24,11 +24,16 @@ export function stripTasksFields(taskLine: string): string {
     return s;
 }
 
-export function computeId(event: CompletionEvent): string {
-    if (event.blockId) {
-        return `block:${event.blockId}`;
+export function computeIdFromLine(filePath: string, taskLine: string): string {
+    const blockMatch = taskLine.match(BLOCK_ID_RE);
+    if (blockMatch) {
+        return `block:${blockMatch[1]}`;
     }
-    const desc = stripTasksFields(event.taskLine);
+    const desc = stripTasksFields(taskLine);
     const hash = createHash('sha1').update(desc).digest('hex').slice(0, 16);
-    return `path:${event.file.path}::${hash}`;
+    return `path:${filePath}::${hash}`;
+}
+
+export function computeId(event: CompletionEvent): string {
+    return computeIdFromLine(event.file.path, event.taskLine);
 }
