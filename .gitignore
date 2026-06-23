@@ -5,3 +5,4 @@ main.js
 data.json
 .DS_Store
 docs/
+tests/e2e/.work/

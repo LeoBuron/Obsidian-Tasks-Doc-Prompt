@@ -99,6 +99,7 @@ export class FileWatchDetector implements CompletionDetector {
     private cache = new Map<string, TaskLineSnapshot[]>();
     private handler: CompletionHandler | null = null;
     private modifyRef: EventRef | null = null;
+    private createRef: EventRef | null = null;
     private renameRef: EventRef | null = null;
     private deleteRef: EventRef | null = null;
     private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -115,6 +116,15 @@ export class FileWatchDetector implements CompletionDetector {
         this.modifyRef = this.app.vault.on('modify', (file: any) => {
             if (!(file && file.extension === 'md')) return;
             this.scheduleDiff(file as TFile);
+        });
+        // Snapshot files that appear AFTER startup (a new daily note, or a file
+        // synced in by another plugin such as livesync) so the first completion
+        // in them has a baseline to diff against. Without this, runDiff sees an
+        // empty oldSnaps for the file and the open→done transition is invisible.
+        // Creation itself is never a completion, so we only cache here — no diff.
+        this.createRef = this.app.vault.on('create', (file: any) => {
+            if (!(file && file.extension === 'md')) return;
+            void this.cacheFile(file as TFile);
         });
         this.renameRef = this.app.vault.on('rename', (file: any, oldPath: string) => {
             if (this.cache.has(oldPath)) {
@@ -136,18 +146,26 @@ export class FileWatchDetector implements CompletionDetector {
             (this.app.vault as any).offref?.(ref);
         };
         off(this.modifyRef); this.modifyRef = null;
+        off(this.createRef); this.createRef = null;
         off(this.renameRef); this.renameRef = null;
         off(this.deleteRef); this.deleteRef = null;
     }
 
     private async warmCache(): Promise<void> {
+        // Per-file try/catch (inside cacheFile) so one unreadable file can't
+        // abort caching the rest — otherwise every file after it would lack a
+        // baseline and silently miss its first completion.
+        for (const file of this.app.vault.getMarkdownFiles()) {
+            await this.cacheFile(file);
+        }
+    }
+
+    private async cacheFile(file: TFile): Promise<void> {
         try {
-            for (const file of this.app.vault.getMarkdownFiles()) {
-                const content = await this.app.vault.read(file);
-                this.cache.set(file.path, snapshotLines(content.split('\n')));
-            }
+            const content = await this.app.vault.read(file);
+            this.cache.set(file.path, snapshotLines(content.split('\n')));
         } catch (err) {
-            console.error('[FileWatchDetector] warmCache failed:', err);
+            console.error('[FileWatchDetector] cacheFile failed:', file.path, err);
         }
     }
 
