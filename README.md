@@ -43,17 +43,31 @@ When a task line transitions from open (`- [ ]`) to a configured "done" status
 │ ┌──────────────────────────────────────────────────────┐   │
 │ │ [textarea]                                           │   │
 │ └──────────────────────────────────────────────────────┘   │
-│ [Save]  [Not now]  [Defer until…]    [Don't ask]          │
+│ [Save] [Create follow-up] [Not now] [Defer until…]         │
+│                                                [Don't ask] │
 └────────────────────────────────────────────────────────────┘
 ```
 
 - **Save** writes the paragraph as an indented sub-bullet under the task.
+- **Create follow-up** writes the paragraph as a new *open task* under the
+  completed one instead of a comment, e.g. `- [ ] send it to Bob #work`. The
+  completed task's hashtags are copied automatically, so a `#tag` global filter
+  carries over (a plain-word global filter such as `TODO` is not a tag — type it
+  yourself); dates, priority, recurrence and ids are not copied. Only the first
+  line is the task; further lines are kept verbatim under it, so notes or
+  `- [ ]` sub-items both work. A description is required. Shortcut:
+  Cmd/Ctrl+Shift+Enter (Cmd/Ctrl+Enter still saves a comment).
 - **Not now** defers the prompt; it re-fires after the configured duration.
 - **Defer until…** opens an inline panel for picking *when* to be re-prompted
   (presets or custom time, optionally recurring).
 - **Don't ask for this** marks the task permanently skipped.
 
 If the modal is closed without an explicit choice, it's treated as "Not now".
+
+If the task line can no longer be found when writing (moved or edited in the
+meantime), the text goes to the fallback log file instead. A follow-up written
+there is still a real task line carrying the copied tags, so it shows up in
+Tasks queries until you move it.
 
 ## Defer-until panel
 
@@ -149,7 +163,8 @@ future release).
 - `src/orchestration/PromptOrchestrator.ts` — folder filter, queue, recurrence preservation table
 - `src/orchestration/ModalQueue.ts` — FIFO serialisation so two completed tasks never race for the modal
 - `src/detection/FileWatchDetector.ts` — pure-diff file-watch detector behind a `CompletionDetector` interface
-- `src/persistence/SubBulletWriter.ts` — vault-aware writer with pure `compose()` for the bullet line
+- `src/persistence/SubBulletWriter.ts` — vault-aware writer with pure `composeSubBullet()` / `composeFollowUpTask()` for the inserted lines
+- `src/persistence/FollowUpTask.ts` — pure tag extraction (Tasks' own hashtag regex) and follow-up task text composition
 - `src/ui/DocumentationModal.ts` — Modal + Defer-until panel + edit-mode constructor
 
 The persistence schema is version `1`. New fields (such as `recurrence` on a
@@ -164,9 +179,10 @@ npm test           # Jest (TDD-first; pure modules have full coverage)
 npm run build      # tsc --noEmit + production esbuild
 ```
 
-Tests live alongside the modules they exercise (`tests/<domain>/...`). DOM-driven
-modal logic is verified manually against a test vault; pure logic and
-persistence are exercised in Jest.
+Tests live alongside the modules they exercise (`tests/<domain>/...`). Pure
+logic and persistence are exercised in Jest; the modal is driven in Jest through
+a small fake element tree in `tests/__mocks__/obsidian.ts`. The live vault event
+plumbing is covered by the e2e harness (`npm run test:e2e`, see `tests/e2e/`).
 
 ## License
 

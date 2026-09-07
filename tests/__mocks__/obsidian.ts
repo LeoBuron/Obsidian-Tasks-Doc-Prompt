@@ -15,15 +15,95 @@ export class TFile {
 }
 
 export class Notice {
-    constructor(public message: string) {}
+    /** Every message shown since the last reset — tests inspect and clear this. */
+    static messages: string[] = [];
+    constructor(public message: string) {
+        Notice.messages.push(message);
+    }
+}
+
+export type FakeElOpts = { cls?: string; text?: string; type?: string };
+
+/**
+ * Minimal fake of the element helpers Obsidian adds to HTMLElement
+ * (createEl / createDiv / setText / ...). Just enough to open a Modal in Jest
+ * and drive its buttons; it is not a DOM.
+ */
+export class FakeEl {
+    tag: string;
+    cls: string;
+    text: string;
+    type: string | undefined;
+    children: FakeEl[] = [];
+    parent: FakeEl | null = null;
+    style: Record<string, string> = {};
+    attrs: Record<string, string> = {};
+    listeners: Record<string, Array<(ev: any) => void>> = {};
+    value = '';
+    checked = false;
+    rows = 0;
+    placeholder = '';
+
+    constructor(tag: string, opts: FakeElOpts = {}) {
+        this.tag = tag;
+        this.cls = opts.cls ?? '';
+        this.text = opts.text ?? '';
+        this.type = opts.type;
+    }
+
+    createEl(tag: string, opts?: FakeElOpts): FakeEl {
+        const el = new FakeEl(tag, opts);
+        el.parent = this;
+        this.children.push(el);
+        return el;
+    }
+    createDiv(opts?: FakeElOpts): FakeEl { return this.createEl('div', opts); }
+    addEventListener(name: string, cb: (ev: any) => void): void {
+        (this.listeners[name] ??= []).push(cb);
+    }
+    dispatch(name: string, ev: Record<string, unknown> = {}): void {
+        for (const cb of this.listeners[name] ?? []) cb({ preventDefault: () => {}, ...ev });
+    }
+    click(): void { this.dispatch('click'); }
+    setAttr(key: string, value: string): void { this.attrs[key] = value; }
+    setText(text: string): void { this.text = text; }
+    appendText(text: string): void { this.text += text; }
+    empty(): void {
+        for (const c of this.children) c.parent = null;
+        this.children = [];
+    }
+    remove(): void {
+        if (!this.parent) return;
+        this.parent.children = this.parent.children.filter((c) => c !== this);
+        this.parent = null;
+    }
+    focus(): void {}
+    /** Depth-first search over descendants. */
+    find(pred: (el: FakeEl) => boolean): FakeEl | null {
+        for (const c of this.children) {
+            if (pred(c)) return c;
+            const deeper = c.find(pred);
+            if (deeper) return deeper;
+        }
+        return null;
+    }
+    findAll(pred: (el: FakeEl) => boolean): FakeEl[] {
+        const out: FakeEl[] = [];
+        for (const c of this.children) {
+            if (pred(c)) out.push(c);
+            out.push(...c.findAll(pred));
+        }
+        return out;
+    }
 }
 
 export class Modal {
-    contentEl: any = { empty: () => {}, createEl: () => ({}), createDiv: () => ({}) };
-    titleEl: any = { setText: (_: string) => {} };
+    contentEl: any = new FakeEl('div');
+    titleEl: any = new FakeEl('div');
     constructor(app: App) {}
-    open(): void {}
-    close(): void {}
+    // Mirror Obsidian: opening/closing runs the lifecycle hooks.
+    open(): void { this.onOpen(); }
+    close(): void { this.onClose(); }
     onOpen(): void {}
     onClose(): void {}
 }

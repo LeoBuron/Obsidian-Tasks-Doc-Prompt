@@ -12,7 +12,10 @@ import type { LookupResult } from '../detection/TaskLookup';
 export type ModalShow = (taskLine: string) => Promise<ModalResult>;
 
 export interface WriterLike {
+    /** Writes `text` as a plain sub-bullet (comment) under the completed task. */
     write(event: CompletionEvent, text: string): Promise<void>;
+    /** Writes `text` as an open follow-up task under the completed task, inheriting its tags. */
+    writeFollowUp(event: CompletionEvent, text: string): Promise<void>;
 }
 
 interface QueueItem {
@@ -173,6 +176,12 @@ export class PromptOrchestrator {
 
             if (result.kind === 'save') {
                 await this.writer.write(item.event, result.text);
+                this.skipStore.removeDeferred(item.id);
+                return;
+            }
+
+            if (result.kind === 'follow-up') {
+                await this.writer.writeFollowUp(item.event, result.text);
                 this.skipStore.removeDeferred(item.id);
                 return;
             }
