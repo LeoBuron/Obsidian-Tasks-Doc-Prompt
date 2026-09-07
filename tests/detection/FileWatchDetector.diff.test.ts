@@ -113,4 +113,31 @@ describe('diffSnapshot', () => {
         expect(events[0].newStatus).toBe('-');
         expect(events[0].lineNumber).toBe(0);
     });
+
+    // The "Create follow-up" button inserts a new open task directly under a
+    // completed one. That insertion must never be read as a completion.
+    test('an open follow-up task inserted under a completed task fires no event', () => {
+        const oldSnaps = snapshotLines(['- [x] write report #work']);
+        const newLines = [
+            '- [x] write report #work',
+            '    - [ ] send it to Bob #work',
+        ];
+        expect(diffSnapshot(oldSnaps, newLines, doneSymbols)).toEqual([]);
+    });
+
+    test('an inserted follow-up whose description equals the parent fires no event', () => {
+        const oldSnaps = snapshotLines(['- [x] call Bob #work']);
+        const newLines = [
+            '- [x] call Bob #work',
+            '    - [ ] call Bob #work',
+        ];
+        expect(diffSnapshot(oldSnaps, newLines, doneSymbols)).toEqual([]);
+    });
+
+    test('completing the inserted follow-up later fires one event for that line only', () => {
+        const oldSnaps = snapshotLines(['- [x] call Bob #work', '    - [ ] call Bob again #work']);
+        const newLines = ['- [x] call Bob #work', '    - [x] call Bob again #work ✅ 2026-09-08'];
+        const events = diffSnapshot(oldSnaps, newLines, doneSymbols);
+        expect(events.map(e => e.lineNumber)).toEqual([1]);
+    });
 });
