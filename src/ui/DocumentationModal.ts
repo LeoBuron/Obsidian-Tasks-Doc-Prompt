@@ -8,6 +8,7 @@ import {
 
 export type ModalResult =
     | { kind: 'save'; text: string }
+    | { kind: 'follow-up'; text: string }
     | { kind: 'defer'; remindAt?: number; recurrence?: DeferPattern }
     | { kind: 'permanent-skip' }
     | { kind: 'cancel' };
@@ -69,7 +70,11 @@ export class DocumentationModal extends Modal {
             ta.addEventListener('keydown', (ev: KeyboardEvent) => {
                 if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') {
                     ev.preventDefault();
-                    this.settle({ kind: 'save', text: this.textarea!.value });
+                    if (ev.shiftKey) {
+                        this.submitFollowUp();
+                    } else {
+                        this.settle({ kind: 'save', text: this.textarea!.value });
+                    }
                 }
             });
         }
@@ -84,6 +89,13 @@ export class DocumentationModal extends Modal {
             save.addEventListener('click', () => {
                 this.settle({ kind: 'save', text: this.textarea!.value });
             });
+
+            const followUp = btnRow.createEl('button', { text: 'Create follow-up' });
+            followUp.setAttr(
+                'title',
+                'Instead of a comment, add an open task under this one that inherits its tags (Cmd/Ctrl+Shift+Enter)',
+            );
+            followUp.addEventListener('click', () => this.submitFollowUp());
 
             const defer = btnRow.createEl('button', { text: 'Not now' });
             defer.addEventListener('click', () => {
@@ -113,6 +125,22 @@ export class DocumentationModal extends Modal {
         if (this.prefill) {
             this.openPanel(this.prefill);
         }
+    }
+
+    /**
+     * "Create follow-up": the textarea text becomes a new open task under the
+     * completed one (tags are inherited by the writer). A task needs a
+     * description, so blank input is rejected and the modal stays open —
+     * unlike Save, which silently writes nothing for blank input.
+     */
+    private submitFollowUp(): void {
+        const text = this.textarea?.value ?? '';
+        if (text.trim() === '') {
+            new Notice('Enter a description for the follow-up task.');
+            this.textarea?.focus();
+            return;
+        }
+        this.settle({ kind: 'follow-up', text });
     }
 
     private togglePanel(): void {

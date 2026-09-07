@@ -1,11 +1,19 @@
 import { TFile } from 'obsidian';
-import { PromptOrchestrator } from '../../src/orchestration/PromptOrchestrator';
+import { PromptOrchestrator, type WriterLike } from '../../src/orchestration/PromptOrchestrator';
 import { SkipStateStore } from '../../src/persistence/SkipStateStore';
 import { DEFAULT_SETTINGS } from '../../src/config/Settings';
 import type { CompletionEvent } from '../../src/detection/types';
 import { computeIdFromLine } from '../../src/identity/TaskIdentity';
 
 const makeStore = async () => SkipStateStore.load({ load: async () => null, save: async () => {} });
+
+function makeWriter(overrides: Partial<WriterLike> = {}): WriterLike {
+    return {
+        write: async () => {},
+        writeFollowUp: async () => {},
+        ...overrides,
+    };
+}
 
 function makeApp(initialFiles: Record<string, string> = {}) {
     const files: Record<string, string> = { ...initialFiles };
@@ -52,7 +60,7 @@ describe('PromptOrchestrator', () => {
             settings: { ...DEFAULT_SETTINGS, enabledFolders: ['Work'] },
             skipStore: store,
             modalShow: async () => ({ kind: 'save', text: 'x' }),
-            writer: { write: async (e, t) => { writes.push({ e, t }); } },
+            writer: makeWriter({ write: async (e, t) => { writes.push({ e, t }); } }),
             now: () => 0,
         });
         await orch.handle(makeEvent('- [x] outside', 'Personal/notes.md'));
@@ -68,7 +76,7 @@ describe('PromptOrchestrator', () => {
             settings: { ...DEFAULT_SETTINGS },
             skipStore: store,
             modalShow: async () => ({ kind: 'save', text: 'did it' }),
-            writer: { write: async (e, t) => { writes.push({ e, t }); } },
+            writer: makeWriter({ write: async (e, t) => { writes.push({ e, t }); } }),
             now: () => 0,
         });
         await orch.handle(makeEvent('- [x] task'));
@@ -85,7 +93,7 @@ describe('PromptOrchestrator', () => {
             settings: { ...DEFAULT_SETTINGS },
             skipStore: store,
             modalShow: async () => ({ kind: 'save', text: 'x' }),
-            writer: { write: async () => { writes.push(1); } },
+            writer: makeWriter({ write: async () => { writes.push(1); } }),
             now: () => 0,
         });
         const ev = makeEvent('- [x] skipped task');
@@ -105,7 +113,7 @@ describe('PromptOrchestrator', () => {
             settings: { ...DEFAULT_SETTINGS },
             skipStore: store,
             modalShow: async () => ({ kind: 'save', text: 'done' }),
-            writer: { write: async (e, t) => { writes.push(t); } },
+            writer: makeWriter({ write: async (e, t) => { writes.push(t); } }),
             now: () => 1000,
         });
         const ev = makeEvent('- [x] task');
@@ -117,6 +125,31 @@ describe('PromptOrchestrator', () => {
         expect(store.getDeferred()).toEqual([]);
     });
 
+    test('follow-up → writer.writeFollowUp called with the text, no comment written, deferred cleared', async () => {
+        const store = await makeStore();
+        const followUps: string[] = [];
+        const comments: string[] = [];
+        const orch = new PromptOrchestrator({
+            app: fakeApp,
+            settings: { ...DEFAULT_SETTINGS },
+            skipStore: store,
+            modalShow: async () => ({ kind: 'follow-up', text: 'ping Bob' }),
+            writer: makeWriter({
+                write: async (_e, t) => { comments.push(t); },
+                writeFollowUp: async (_e, t) => { followUps.push(t); },
+            }),
+            now: () => 1000,
+        });
+        const ev = makeEvent('- [x] task #work');
+        const id = computeIdFromLine(ev.file.path, ev.taskLine);
+        store.markDeferred(id, { filePath: ev.file.path, lineNumber: 0, taskLine: ev.taskLine }, 1);
+        await orch.handle(ev);
+        await orch.drainForTest();
+        expect(followUps).toEqual(['ping Bob']);
+        expect(comments).toEqual([]);
+        expect(store.getDeferred()).toEqual([]);
+    });
+
     test('defer → markDeferred with remindAt = now + duration', async () => {
         const store = await makeStore();
         const orch = new PromptOrchestrator({
@@ -124,7 +157,7 @@ describe('PromptOrchestrator', () => {
             settings: { ...DEFAULT_SETTINGS, defaultDeferDurationMinutes: 60 },
             skipStore: store,
             modalShow: async () => ({ kind: 'defer' }),
-            writer: { write: async () => {} },
+            writer: makeWriter(),
             now: () => 1_000_000,
         });
         await orch.handle(makeEvent('- [x] task'));
@@ -141,7 +174,7 @@ describe('PromptOrchestrator', () => {
             settings: { ...DEFAULT_SETTINGS },
             skipStore: store,
             modalShow: async () => ({ kind: 'permanent-skip' }),
-            writer: { write: async () => {} },
+            writer: makeWriter(),
             now: () => 0,
         });
         const ev = makeEvent('- [x] task');
@@ -169,7 +202,7 @@ describe('PromptOrchestrator', () => {
                 deferredCountDuringModal.push(store.getDeferred().length);
                 return { kind: 'permanent-skip' };
             },
-            writer: { write: async () => {} },
+            writer: makeWriter(),
             now: () => 1000,
         });
         store.markDeferred(idA, { filePath: 'A.md', lineNumber: 0, taskLine: '- [x] a' }, 100);
@@ -198,7 +231,7 @@ describe('PromptOrchestrator', () => {
                 deferredCountDuringModal.push(store.getDeferred().length);
                 return { kind: 'permanent-skip' };
             },
-            writer: { write: async () => {} },
+            writer: makeWriter(),
             now: () => 1000,
         });
         store.markDeferred(idA, { filePath: 'A.md', lineNumber: 0, taskLine: '- [x] a' }, 100);
@@ -228,7 +261,7 @@ describe('PromptOrchestrator', () => {
                 await modalGate;
                 return { kind: 'permanent-skip' };
             },
-            writer: { write: async () => {} },
+            writer: makeWriter(),
             now: () => 1000,
         });
         store.markDeferred(idA, { filePath: 'A.md', lineNumber: 0, taskLine: '- [x] a' }, 100);
@@ -262,7 +295,7 @@ describe('PromptOrchestrator', () => {
             settings: { ...DEFAULT_SETTINGS, defaultDeferDurationMinutes: 60 },
             skipStore: store,
             modalShow: async () => ({ kind: 'defer' }), // "Not now"
-            writer: { write: async () => {} },
+            writer: makeWriter(),
             now: () => new Date(2026, 4, 7, 9, 5).getTime(), // 09:05
         });
         const ev = makeEvent('- [x] task');
@@ -292,7 +325,7 @@ describe('PromptOrchestrator', () => {
             settings: { ...DEFAULT_SETTINGS, defaultDeferDurationMinutes: 60 },
             skipStore: store,
             modalShow: async () => ({ kind: 'defer' }),
-            writer: { write: async () => {} },
+            writer: makeWriter(),
             now: () => 1_000_000,
         });
         const ev = makeEvent('- [x] task');
@@ -311,7 +344,7 @@ describe('PromptOrchestrator', () => {
             settings: { ...DEFAULT_SETTINGS, defaultDeferDurationMinutes: 60 },
             skipStore: store,
             modalShow: async () => ({ kind: 'defer', remindAt: 5_000_000 }),
-            writer: { write: async () => {} },
+            writer: makeWriter(),
             now: () => 1_000_000,
         });
         const ev = makeEvent('- [x] task');
@@ -338,7 +371,7 @@ describe('PromptOrchestrator', () => {
             settings: { ...DEFAULT_SETTINGS, defaultDeferDurationMinutes: 60 },
             skipStore: store,
             modalShow: async () => ({ kind: 'defer', remindAt: 5_000_000, recurrence: { ...newPattern } }),
-            writer: { write: async () => {} },
+            writer: makeWriter(),
             now: () => 1_000_000,
         });
         const ev = makeEvent('- [x] task');
@@ -363,7 +396,7 @@ describe('PromptOrchestrator', () => {
             settings: { ...DEFAULT_SETTINGS },
             skipStore: store,
             modalShow: async () => ({ kind: 'cancel' }),
-            writer: { write: async () => {} },
+            writer: makeWriter(),
             now: () => 0,
         });
         const ev = makeEvent('- [x] task');
@@ -386,7 +419,7 @@ describe('PromptOrchestrator', () => {
             settings: { ...DEFAULT_SETTINGS },
             skipStore: store,
             modalShow: async () => { modalOpenCount++; return { kind: 'permanent-skip' }; },
-            writer: { write: async () => {} },
+            writer: makeWriter(),
             now: () => 1000,
         });
         store.markDeferred(idX, { filePath: 'A.md', lineNumber: 0, taskLine: '- [x] x' }, 100);
@@ -415,7 +448,7 @@ describe('PromptOrchestrator', () => {
             settings: { ...DEFAULT_SETTINGS },
             skipStore: store,
             modalShow: async (taskLine) => { seen.push(taskLine); return { kind: 'permanent-skip' }; },
-            writer: { write: async () => {} },
+            writer: makeWriter(),
             now: () => 1000,
         });
         store.markDeferred('id-gone', { filePath: 'Deleted.md', lineNumber: 1, taskLine: '- [x] gone' }, 100);
@@ -440,7 +473,7 @@ describe('PromptOrchestrator', () => {
             settings: { ...DEFAULT_SETTINGS, doneStatusSymbols: ['x', 'X', '-'] },
             skipStore: store,
             modalShow: async (line) => { modalCalls.push(line); return { kind: 'save', text: 'doc' }; },
-            writer: { write: async (e, t) => { writes.push({ e, t }); } },
+            writer: makeWriter({ write: async (e, t) => { writes.push({ e, t }); } }),
             now: () => 1000,
         });
         const id = computeIdFromLine(path, triggerLine);
@@ -467,7 +500,7 @@ describe('PromptOrchestrator', () => {
             settings: { ...DEFAULT_SETTINGS, doneStatusSymbols: ['x', 'X', '-'] },
             skipStore: store,
             modalShow: async () => ({ kind: 'save', text: 'doc' }),
-            writer: { write: async (e, t) => { writes.push({ e, t }); receivedNewStatus = e.newStatus; } },
+            writer: makeWriter({ write: async (e, t) => { writes.push({ e, t }); receivedNewStatus = e.newStatus; } }),
             now: () => 1000,
         });
         const id = computeIdFromLine(path, triggerLine);
@@ -491,7 +524,7 @@ describe('PromptOrchestrator', () => {
             settings: { ...DEFAULT_SETTINGS, doneStatusSymbols: ['x', 'X', '-'] },
             skipStore: store,
             modalShow: async () => ({ kind: 'save', text: 'doc' }),
-            writer: { write: async (e) => { receivedLine = e.lineNumber; } },
+            writer: makeWriter({ write: async (e) => { receivedLine = e.lineNumber; } }),
             now: () => 1000,
         });
         const id = computeIdFromLine(path, triggerLine);
@@ -511,7 +544,7 @@ describe('PromptOrchestrator', () => {
             settings: { ...DEFAULT_SETTINGS, doneStatusSymbols: ['x', 'X', '-'] },
             skipStore: store,
             modalShow: async (l) => { modalCalls.push(l); return { kind: 'save', text: '' }; },
-            writer: { write: async () => {} },
+            writer: makeWriter(),
             now: () => 1000,
         });
         const id = computeIdFromLine(path, triggerLine);
@@ -537,7 +570,7 @@ describe('PromptOrchestrator', () => {
             settings: { ...DEFAULT_SETTINGS, doneStatusSymbols: ['x', 'X', '-'] },
             skipStore: store,
             modalShow: async () => ({ kind: 'save', text: '' }),
-            writer: { write: async () => {} },
+            writer: makeWriter(),
             now: () => 1000,
         });
         const id = computeIdFromLine(path, triggerLine);
@@ -572,7 +605,7 @@ describe('PromptOrchestrator', () => {
                 }
                 return { kind: 'save', text: 'doc' };
             },
-            writer: { write: async (e, t) => { writes.push({ e, t }); } },
+            writer: makeWriter({ write: async (e, t) => { writes.push({ e, t }); } }),
             now: () => 1000,
         });
         const id = computeIdFromLine(path, '- [x] write report');
