@@ -157,10 +157,18 @@ async function enablePlugins() {
  *  - `.mjs` — a driver module exporting `run({ evaluate, dispatchKey })`, for
  *             cases that need CDP domains beyond Runtime (e.g. real key events).
  */
-const CASES = (process.env.E2E_CASES || 'new-file-completion.js,follow-up-task.mjs')
+const DEFAULT_CASES = 'new-file-completion.js,follow-up-task.mjs';
+const CASES = (process.env.E2E_CASES || DEFAULT_CASES)
     .split(',')
     .map((c) => c.trim())
     .filter(Boolean);
+
+// A selection that parses to nothing must not look like a clean run: without
+// this, E2E_CASES=' , ' reports "PASSED (0 cases)" and exits 0.
+if (CASES.length === 0) {
+    console.error('E2E_CASES is set but names no cases; nothing to run.');
+    process.exit(1);
+}
 
 async function runCase(name) {
     const file = join(__dirname, 'cases', name);
@@ -213,20 +221,24 @@ async function main() {
     }
     await sleep(1500); // let warmCache settle
 
-    const results = {};
+    // A list, not a map keyed by name: running the same case twice (the natural
+    // way to check for flakiness) must not let a later pass overwrite an
+    // earlier failure.
+    const results = [];
     for (const name of CASES) {
         log('running case:', name);
-        results[name] = await runCase(name);
-        log(name, '→', JSON.stringify(results[name], null, 2));
+        const result = await runCase(name);
+        results.push({ name, result });
+        log(name, '→', JSON.stringify(result, null, 2));
     }
 
     killHarness();
-    const failed = Object.entries(results).filter(([, r]) => !r.ok).map(([n]) => n);
+    const failed = results.filter((r) => !r.result.ok).map((r) => r.name);
     if (failed.length) {
         console.error('\n❌ E2E FAILED:', failed.join(', '));
         process.exit(1);
     }
-    console.log('\n✅ E2E PASSED (' + CASES.length + ' cases)');
+    console.log('\n✅ E2E PASSED (' + results.length + ' cases)');
 }
 
 main().catch((err) => {
