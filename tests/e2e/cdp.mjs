@@ -59,6 +59,48 @@ export async function evaluate(expression, { port = DEFAULT_PORT } = {}) {
     return r.result.value;
 }
 
+/**
+ * Send a REAL key event through Chrome's input pipeline to the focused element.
+ *
+ * Why not a synthetic `new KeyboardEvent(...)` in the renderer: a synthetic
+ * event cannot prove that Obsidian's own hotkey layer leaves the combination
+ * alone, and `isTrusted` differs. `Input.dispatchKeyEvent` enters at the same
+ * point a physical keypress does, so an Obsidian global hotkey that swallows
+ * the combination will swallow this one too.
+ *
+ * Modifier bitmask (CDP): Alt=1, Ctrl=2, Meta=4, Shift=8.
+ */
+export async function dispatchKey(
+    { key, code, keyCode, modifiers = 0 },
+    { port = DEFAULT_PORT } = {},
+) {
+    const ws = new WebSocket(await pageWsUrl(port));
+    let id = 0;
+    const pending = new Map();
+    const send = (method, params) =>
+        new Promise((res, rej) => {
+            const mid = ++id;
+            pending.set(mid, { res, rej });
+            ws.send(JSON.stringify({ id: mid, method, params }));
+        });
+    await new Promise((res, rej) => {
+        ws.onopen = res;
+        ws.onerror = rej;
+    });
+    ws.onmessage = (ev) => {
+        const msg = JSON.parse(ev.data);
+        if (msg.id && pending.has(msg.id)) {
+            const { res, rej } = pending.get(msg.id);
+            pending.delete(msg.id);
+            msg.error ? rej(new Error(JSON.stringify(msg.error))) : res(msg.result);
+        }
+    };
+    const common = { key, code, windowsVirtualKeyCode: keyCode, nativeVirtualKeyCode: keyCode, modifiers };
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', ...common });
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', ...common });
+    ws.close();
+}
+
 /** Wait until the CDP endpoint answers (Obsidian finished booting). */
 export async function waitForCdp(port = DEFAULT_PORT, { timeoutMs = 40000 } = {}) {
     const deadline = Date.now() + timeoutMs;

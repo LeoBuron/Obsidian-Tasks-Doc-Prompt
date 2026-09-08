@@ -17,9 +17,9 @@ import {
     readdirSync, existsSync, copyFileSync,
 } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { homedir } from 'node:os';
-import { evaluate, waitForCdp } from './cdp.mjs';
+import { evaluate, waitForCdp, dispatchKey } from './cdp.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO = join(__dirname, '..', '..');
@@ -150,6 +150,42 @@ async function enablePlugins() {
     );
 }
 
+/**
+ * Cases run in order against one Obsidian instance. Two flavours:
+ *  - `.js`  — a renderer script; its source is evaluated in the page and must
+ *             return a JSON string verdict.
+ *  - `.mjs` — a driver module exporting `run({ evaluate, dispatchKey })`, for
+ *             cases that need CDP domains beyond Runtime (e.g. real key events).
+ */
+const CASES = (process.env.E2E_CASES || 'new-file-completion.js,follow-up-task.mjs')
+    .split(',')
+    .map((c) => c.trim())
+    .filter(Boolean);
+
+async function runCase(name) {
+    const file = join(__dirname, 'cases', name);
+    if (name.endsWith('.mjs')) {
+        const mod = await import(pathToFileURL(file).href);
+        if (typeof mod.run !== 'function') {
+            return { ok: false, error: `${name} does not export run()` };
+        }
+        try {
+            return await mod.run({
+                evaluate: (expr) => evaluate(expr, { port: PORT }),
+                dispatchKey: (opts) => dispatchKey(opts, { port: PORT }),
+            });
+        } catch (err) {
+            return { ok: false, error: String(err && err.message ? err.message : err) };
+        }
+    }
+    const raw = await evaluate(readFileSync(file, 'utf8'), { port: PORT });
+    try {
+        return JSON.parse(raw);
+    } catch {
+        return { ok: false, error: 'unparseable result: ' + raw };
+    }
+}
+
 async function main() {
     if (!existsSync(OBSIDIAN_BIN)) {
         console.error('Obsidian binary not found at', OBSIDIAN_BIN, '— set OBSIDIAN_BIN');
@@ -177,22 +213,20 @@ async function main() {
     }
     await sleep(1500); // let warmCache settle
 
-    const caseSrc = readFileSync(join(__dirname, 'cases', 'new-file-completion.js'), 'utf8');
-    const raw = await evaluate(caseSrc, { port: PORT });
-    let result;
-    try {
-        result = JSON.parse(raw);
-    } catch {
-        result = { ok: false, error: 'unparseable result: ' + raw };
+    const results = {};
+    for (const name of CASES) {
+        log('running case:', name);
+        results[name] = await runCase(name);
+        log(name, '→', JSON.stringify(results[name], null, 2));
     }
-    log('new-file-completion →', JSON.stringify(result, null, 2));
 
     killHarness();
-    if (!result.ok) {
-        console.error('\n❌ E2E FAILED');
+    const failed = Object.entries(results).filter(([, r]) => !r.ok).map(([n]) => n);
+    if (failed.length) {
+        console.error('\n❌ E2E FAILED:', failed.join(', '));
         process.exit(1);
     }
-    console.log('\n✅ E2E PASSED');
+    console.log('\n✅ E2E PASSED (' + CASES.length + ' cases)');
 }
 
 main().catch((err) => {
