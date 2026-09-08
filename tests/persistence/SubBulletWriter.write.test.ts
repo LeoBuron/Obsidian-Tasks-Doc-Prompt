@@ -29,58 +29,153 @@ function makeWriter(files: Record<string, string>): SubBulletWriter {
     return new SubBulletWriter(app, new FallbackLog(app, LOG_PATH));
 }
 
-describe('SubBulletWriter.writeFollowUp', () => {
-    test('inserts the follow-up task under the parent with the tags from the live line', async () => {
+
+describe('SubBulletWriter.write — documentation and follow-up', () => {
+    test('writes the documentation as a comment and the follow-up as a task below it', async () => {
         const files: Record<string, string> = { 'Work/n.md': '- [x] write report #work ✅ 2026-09-07\n- [ ] other' };
         const writer = makeWriter(files);
 
-        await writer.writeFollowUp(makeEvent('- [x] write report #work ✅ 2026-09-07', 0), 'send it to Bob');
+        await writer.write(makeEvent('- [x] write report #work ✅ 2026-09-07', 0), {
+            documentation: 'Drafted v1.',
+            followUp: 'send it to Bob',
+        });
 
         expect(files['Work/n.md']).toBe(
-            '- [x] write report #work ✅ 2026-09-07\n    - [ ] send it to Bob #work\n- [ ] other',
+            '- [x] write report #work ✅ 2026-09-07\n' +
+            '    - Drafted v1.\n' +
+            '    - [ ] send it to Bob #work\n' +
+            '- [ ] other',
         );
         expect(files[LOG_PATH]).toBeUndefined();
+    });
+
+    test('documentation only: no task line is written', async () => {
+        const files: Record<string, string> = { 'Work/n.md': '- [x] write report #work' };
+        const writer = makeWriter(files);
+
+        await writer.write(makeEvent('- [x] write report #work', 0), {
+            documentation: 'Drafted v1.',
+            followUp: '  ',
+        });
+
+        expect(files['Work/n.md']).toBe('- [x] write report #work\n    - Drafted v1.');
+    });
+
+    test('follow-up only: the task inherits the tags of the live parent line', async () => {
+        const files: Record<string, string> = { 'Work/n.md': '- [x] write report #work' };
+        const writer = makeWriter(files);
+
+        await writer.write(makeEvent('- [x] write report #work', 0), {
+            documentation: '',
+            followUp: 'send it to Bob',
+        });
+
+        expect(files['Work/n.md']).toBe('- [x] write report #work\n    - [ ] send it to Bob #work');
+    });
+
+    test('multi-line input: continuation lines stay under their own block', async () => {
+        const files: Record<string, string> = { 'Work/n.md': '- [x] write report #work' };
+        const writer = makeWriter(files);
+
+        await writer.write(makeEvent('- [x] write report #work', 0), {
+            documentation: 'Drafted v1.\nSent it round.',
+            followUp: 'send it to Bob\nask about the budget',
+        });
+
+        expect(files['Work/n.md']).toBe(
+            '- [x] write report #work\n' +
+            '    - Drafted v1.\n' +
+            '      Sent it round.\n' +
+            '    - [ ] send it to Bob #work\n' +
+            '      ask about the budget',
+        );
     });
 
     test('locates the parent by description when the line number is stale', async () => {
         const files: Record<string, string> = { 'Work/n.md': '# Heading\n\n- [x] write report #work' };
         const writer = makeWriter(files);
 
-        await writer.writeFollowUp(makeEvent('- [x] write report #work', 0), 'send it to Bob');
+        await writer.write(makeEvent('- [x] write report #work', 0), {
+            documentation: '',
+            followUp: 'send it to Bob',
+        });
 
         expect(files['Work/n.md']).toBe('# Heading\n\n- [x] write report #work\n    - [ ] send it to Bob #work');
     });
+});
 
-    test('logs the composed task to the fallback log when the parent cannot be found', async () => {
+describe('SubBulletWriter.write — fallback log', () => {
+    test('logs both blocks when the parent cannot be found', async () => {
         const files: Record<string, string> = { 'Work/n.md': '- [x] something else entirely' };
         const writer = makeWriter(files);
 
-        await writer.writeFollowUp(makeEvent('- [x] write report #work', 0), 'send it to Bob');
+        await writer.write(makeEvent('- [x] write report #work', 0), {
+            documentation: 'Drafted v1.',
+            followUp: 'send it to Bob',
+        });
 
         expect(files['Work/n.md']).toBe('- [x] something else entirely');
-        expect(files[LOG_PATH]).toContain('- [ ] send it to Bob #work');
-        expect(files[LOG_PATH]).toContain('Work/n.md:0');
+        // Pinned as one block, not three toContain()s: the order (what
+        // happened, then what's next) and the blank line between them are the
+        // contract, and the task must start at column 0 to stay a real task.
+        expect(files[LOG_PATH]).toContain(
+            '\n\nDrafted v1.\n\n- [ ] send it to Bob #work\n\n[Original location: Work/n.md:0]',
+        );
     });
-});
 
-describe('SubBulletWriter.write', () => {
-    test('inserts the comment as a plain sub-bullet under the parent', async () => {
-        const files: Record<string, string> = { 'Work/n.md': '- [x] write report #work' };
+    test('logs only the follow-up task when no documentation was typed', async () => {
+        const files: Record<string, string> = { 'Work/n.md': '- [x] something else entirely' };
         const writer = makeWriter(files);
 
-        await writer.write(makeEvent('- [x] write report #work', 0), 'Drafted v1.');
+        await writer.write(makeEvent('- [x] write report #work', 0), {
+            documentation: '',
+            followUp: 'send it to Bob',
+        });
 
-        expect(files['Work/n.md']).toBe('- [x] write report #work\n    - Drafted v1.');
+        expect(files['Work/n.md']).toBe('- [x] something else entirely');
+        expect(files[LOG_PATH]).toContain(
+            '\n\n- [ ] send it to Bob #work\n\n[Original location: Work/n.md:0]',
+        );
+    });
+
+    test('logs only the documentation when no follow-up was typed', async () => {
+        const files: Record<string, string> = { 'Work/n.md': '- [x] something else entirely' };
+        const writer = makeWriter(files);
+
+        await writer.write(makeEvent('- [x] write report #work', 0), {
+            documentation: 'Drafted v1.',
+            followUp: '',
+        });
+
+        expect(files[LOG_PATH]).toContain('Drafted v1.');
+        expect(files[LOG_PATH]).not.toContain('- [ ]');
+    });
+
+    /**
+     * The fallback log exists so typed text is never lost. With nothing typed
+     * there is nothing to lose, so a parent line that moved must NOT produce a
+     * heading with an empty body in the log.
+     */
+    test('writes nothing at all when both fields are blank and the parent is gone', async () => {
+        const files: Record<string, string> = { 'Work/n.md': '- [x] something else entirely' };
+        const writer = makeWriter(files);
+
+        await writer.write(makeEvent('- [x] write report #work', 0), {
+            documentation: '   ',
+            followUp: '\n  \n',
+        });
+
+        expect(files['Work/n.md']).toBe('- [x] something else entirely');
         expect(files[LOG_PATH]).toBeUndefined();
     });
 
-    test('logs the comment to the fallback log when the parent cannot be found', async () => {
-        const files: Record<string, string> = { 'Work/n.md': '- [x] something else entirely' };
+    test('leaves the note untouched when both fields are blank and the parent is there', async () => {
+        const files: Record<string, string> = { 'Work/n.md': '- [x] write report #work' };
         const writer = makeWriter(files);
 
-        await writer.write(makeEvent('- [x] write report #work', 0), 'Drafted v1.');
+        await writer.write(makeEvent('- [x] write report #work', 0), { documentation: '', followUp: '' });
 
-        expect(files['Work/n.md']).toBe('- [x] something else entirely');
-        expect(files[LOG_PATH]).toContain('Drafted v1.');
+        expect(files['Work/n.md']).toBe('- [x] write report #work');
+        expect(files[LOG_PATH]).toBeUndefined();
     });
 });

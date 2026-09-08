@@ -5,6 +5,7 @@ import { SkipStateStore, type DeferredEntry } from '../persistence/SkipStateStor
 import { computeId } from '../identity/TaskIdentity';
 import { ModalQueue } from './ModalQueue';
 import type { ModalResult } from '../ui/DocumentationModal';
+import type { PromptInput } from '../persistence/SubBulletWriter';
 import { computeNextMatch } from '../scheduling/DeferPattern';
 import { lookupTaskById } from '../detection/TaskLookup';
 import type { LookupResult } from '../detection/TaskLookup';
@@ -12,10 +13,8 @@ import type { LookupResult } from '../detection/TaskLookup';
 export type ModalShow = (taskLine: string) => Promise<ModalResult>;
 
 export interface WriterLike {
-    /** Writes `text` as a plain sub-bullet (comment) under the completed task. */
-    write(event: CompletionEvent, text: string): Promise<void>;
-    /** Writes `text` as an open follow-up task under the completed task, inheriting its tags. */
-    writeFollowUp(event: CompletionEvent, text: string): Promise<void>;
+    /** Writes the prompt's fields under the completed task. */
+    write(event: CompletionEvent, input: PromptInput): Promise<void>;
 }
 
 interface QueueItem {
@@ -175,13 +174,10 @@ export class PromptOrchestrator {
             }
 
             if (result.kind === 'save') {
-                await this.writer.write(item.event, result.text);
-                this.skipStore.removeDeferred(item.id);
-                return;
-            }
-
-            if (result.kind === 'follow-up') {
-                await this.writer.writeFollowUp(item.event, result.text);
+                await this.writer.write(item.event, {
+                    documentation: result.documentation,
+                    followUp: result.followUp,
+                });
                 this.skipStore.removeDeferred(item.id);
                 return;
             }

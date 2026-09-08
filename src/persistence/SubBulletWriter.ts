@@ -62,6 +62,14 @@ export function composeFollowUpTask(
 
 type Composer = (lines: string[], lineIndex: number) => string[];
 
+/** What the user typed in the prompt. Both fields are optional. */
+export interface PromptInput {
+    /** Free text, written as a plain comment sub-bullet. */
+    documentation: string;
+    /** Free text, written as an open task below the comment. */
+    followUp: string;
+}
+
 export class SubBulletWriter {
     constructor(private app: App, private fallbackLog: FallbackLog) {}
 
@@ -71,25 +79,43 @@ export class SubBulletWriter {
         return { indentWithTabs: useTab, tabSize };
     }
 
-    /** Writes the user's paragraph as a plain sub-bullet under the completed task. */
-    async write(event: CompletionEvent, userText: string): Promise<void> {
+    /**
+     * Writes both prompt fields under the completed task in one pass: the
+     * documentation as a comment sub-bullet, the follow-up as an open task
+     * below it. A field left blank contributes nothing.
+     */
+    async write(event: CompletionEvent, input: PromptInput): Promise<void> {
+        const { documentation, followUp } = input;
+        // Nothing typed means nothing to write and nothing to lose: skip the
+        // vault rewrite, and — crucially — the fallback log, which would
+        // otherwise record an empty entry whenever the parent line moved.
+        if (documentation.trim() === '' && followUp.trim() === '') return;
+
+        const style = this.indentationStyle();
         await this.writeUnder(
             event,
-            (lines, index) => composeSubBullet(lines, index, userText, this.indentationStyle()),
-            userText,
+            (lines, index) => {
+                // Both composers insert at index + 1, so composing the
+                // follow-up FIRST leaves the documentation above it.
+                const withTask = composeFollowUpTask(lines, index, followUp, style);
+                return composeSubBullet(withTask, index, documentation, style);
+            },
+            this.fallbackText(event.taskLine, input),
         );
     }
 
-    /** Writes an open follow-up task under the completed task, inheriting its tags. */
-    async writeFollowUp(event: CompletionEvent, userText: string): Promise<void> {
-        // The fallback log has no live line to read tags from, so use the
-        // snapshot's tags and log a paste-ready task line.
-        const composed = composeFollowUpText(userText, extractTags(event.taskLine));
-        await this.writeUnder(
-            event,
-            (lines, index) => composeFollowUpTask(lines, index, userText, this.indentationStyle()),
-            composed === '' ? userText : `- ${composed}`,
-        );
+    /**
+     * What goes in the fallback log when the parent line cannot be found. The
+     * live line is gone, so tags come from the completion snapshot, and the
+     * follow-up is logged as a real task line so it stays visible to Tasks
+     * queries until the user moves it.
+     */
+    private fallbackText(taskLine: string, input: PromptInput): string {
+        const blocks: string[] = [];
+        if (input.documentation.trim() !== '') blocks.push(input.documentation.replace(/\s+$/, ''));
+        const task = composeFollowUpText(input.followUp, extractTags(taskLine));
+        if (task !== '') blocks.push(`- ${task}`);
+        return blocks.join('\n\n');
     }
 
     /**

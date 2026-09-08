@@ -27,9 +27,11 @@ a similar task comes back, when someone asks how you handled something.
 
 This plugin removes the friction by folding the writing step into the same beat
 as the task transition. The moment the checkbox flips, the prompt is open and
-the cursor is in the textarea. One sentence is fine. The note is saved as an
-indented sub-bullet under the task, in the same file, at the same scroll
-position — no context switch.
+the cursor is in the documentation field. One sentence is fine. The note is
+saved as an indented sub-bullet under the task, in the same file, at the same
+scroll position — no context switch. A second field is there for the follow-up
+the task just spawned, so the next open item lands under this one instead of
+in your head.
 
 ## What it does
 
@@ -40,23 +42,38 @@ When a task line transitions from open (`- [ ]`) to a configured "done" status
 ┌────────────────────────────────────────────────────────────┐
 │ What did you do?                                           │
 │ - [x] write the report                                     │
+│ Documentation                                              │
 │ ┌──────────────────────────────────────────────────────┐   │
 │ │ [textarea]                                           │   │
 │ └──────────────────────────────────────────────────────┘   │
-│ [Save] [Create follow-up] [Not now] [Defer until…]         │
+│ Follow-up task                                             │
+│ ┌──────────────────────────────────────────────────────┐   │
+│ │ [textarea]                                           │   │
+│ └──────────────────────────────────────────────────────┘   │
+│ [Save] [Not now] [Defer until…]                            │
 │                                                [Don't ask] │
 └────────────────────────────────────────────────────────────┘
 ```
 
-- **Save** writes the paragraph as an indented sub-bullet under the task.
-- **Create follow-up** writes the paragraph as a new *open task* under the
-  completed one instead of a comment, e.g. `- [ ] send it to Bob #work`. The
+- **Save** writes both fields under the task, in this order:
+
+  ```markdown
+  - [x] write the report #work
+      - Drafted v1 and sent it round.
+      - [ ] send it to Bob #work
+  ```
+
+  Shortcut: Cmd/Ctrl+Enter, from either field.
+- **Documentation** becomes a plain indented sub-bullet — a comment on what you
+  did.
+- **Follow-up task** becomes a new *open task* under the completed one. The
   completed task's hashtags are copied automatically, so a `#tag` global filter
   carries over (a plain-word global filter such as `TODO` is not a tag — type it
   yourself); dates, priority, recurrence and ids are not copied. Only the first
   line is the task; further lines are kept verbatim under it, so notes or
-  `- [ ]` sub-items both work. A description is required. Shortcut:
-  Cmd/Ctrl+Shift+Enter (Cmd/Ctrl+Enter still saves a comment).
+  `- [ ]` sub-items both work.
+- Both fields are **optional and independent**: fill in one, the other, or
+  both. Saving with both empty writes nothing at all.
 - **Not now** defers the prompt; it re-fires after the configured duration.
 - **Defer until…** opens an inline panel for picking *when* to be re-prompted
   (presets or custom time, optionally recurring).
@@ -67,7 +84,8 @@ If the modal is closed without an explicit choice, it's treated as "Not now".
 If the task line can no longer be found when writing (moved or edited in the
 meantime), the text goes to the fallback log file instead. A follow-up written
 there is still a real task line carrying the copied tags, so it shows up in
-Tasks queries until you move it.
+Tasks queries until you move it. With both fields empty there is nothing to
+lose, so nothing is logged.
 
 ## Defer-until panel
 
@@ -163,9 +181,9 @@ future release).
 - `src/orchestration/PromptOrchestrator.ts` — folder filter, queue, recurrence preservation table
 - `src/orchestration/ModalQueue.ts` — FIFO serialisation so two completed tasks never race for the modal
 - `src/detection/FileWatchDetector.ts` — pure-diff file-watch detector behind a `CompletionDetector` interface
-- `src/persistence/SubBulletWriter.ts` — vault-aware writer with pure `composeSubBullet()` / `composeFollowUpTask()` for the inserted lines
+- `src/persistence/SubBulletWriter.ts` — vault-aware writer inserting both prompt fields in one pass, with pure `composeSubBullet()` / `composeFollowUpTask()` for the inserted lines
 - `src/persistence/FollowUpTask.ts` — pure tag extraction (Tasks' own hashtag regex) and follow-up task text composition
-- `src/ui/DocumentationModal.ts` — Modal + Defer-until panel + edit-mode constructor
+- `src/ui/DocumentationModal.ts` — Modal (documentation + follow-up fields) + Defer-until panel + edit-mode constructor
 
 The persistence schema is version `1`. New fields (such as `recurrence` on a
 deferred entry) are optional — older `data.json` files load unchanged.
