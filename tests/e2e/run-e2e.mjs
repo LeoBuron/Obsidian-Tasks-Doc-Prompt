@@ -157,7 +157,7 @@ async function enablePlugins() {
  *  - `.mjs` — a driver module exporting `run({ evaluate, dispatchKey })`, for
  *             cases that need CDP domains beyond Runtime (e.g. real key events).
  */
-const DEFAULT_CASES = 'new-file-completion.js,follow-up-task.mjs';
+const DEFAULT_CASES = 'new-file-completion.js,two-field-prompt.mjs';
 const CASES = (process.env.E2E_CASES || DEFAULT_CASES)
     .split(',')
     .map((c) => c.trim())

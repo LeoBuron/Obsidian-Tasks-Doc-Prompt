@@ -31,7 +31,7 @@ All cases run in order against one Obsidian instance. Run a subset with
 `E2E_CASES` (comma-separated file names), e.g. while iterating on one case:
 
 ```bash
-E2E_CASES=follow-up-task.mjs E2E_SKIP_BUILD=1 npm run test:e2e
+E2E_CASES=two-field-prompt.mjs E2E_SKIP_BUILD=1 npm run test:e2e
 ```
 
 ## How it works
@@ -55,17 +55,17 @@ E2E_CASES=follow-up-task.mjs E2E_SKIP_BUILD=1 npm run test:e2e
 | `run-e2e.mjs` | Orchestrator: build → setup → launch → enable → run cases → assert → teardown |
 | `cdp.mjs` | Minimal CDP driver (`evaluate`, `dispatchKey`, `waitForCdp`); also usable ad-hoc: `node cdp.mjs '<expr>'` |
 | `cases/new-file-completion.js` | Regression case for the after-startup-file bug |
-| `cases/follow-up-task.mjs` | "Create follow-up" button, its Cmd/Ctrl+Shift+Enter shortcut, and the blank-text guard |
+| `cases/two-field-prompt.mjs` | The documentation + follow-up fields, the Cmd/Ctrl+Enter shortcut from either one, and the fallback log's blank-entry guard |
 
 ## Case flavours
 
 - **`.js` — renderer script.** Its source is evaluated in the page and must
   return a JSON string verdict. Simple, but limited to the Runtime domain.
 - **`.mjs` — driver module.** Exports `run({ evaluate, dispatchKey })`. Needed
-  when a case must reach beyond `Runtime.evaluate` — `follow-up-task.mjs` sends
-  the Cmd/Ctrl+Shift+Enter shortcut through CDP's Input domain, because a
+  when a case must reach beyond `Runtime.evaluate` — `two-field-prompt.mjs`
+  sends the Cmd/Ctrl+Enter shortcut through CDP's Input domain, because a
   synthetic `KeyboardEvent` built in the renderer cannot show whether Obsidian's
-  own hotkey layer leaves the combination alone.
+  own hotkey layer leaves the combination alone in the second textarea.
 
 ## Two traps when writing a case
 

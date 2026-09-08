@@ -10,7 +10,6 @@ const makeStore = async () => SkipStateStore.load({ load: async () => null, save
 function makeWriter(overrides: Partial<WriterLike> = {}): WriterLike {
     return {
         write: async () => {},
-        writeFollowUp: async () => {},
         ...overrides,
     };
 }
@@ -59,7 +58,7 @@ describe('PromptOrchestrator', () => {
             app: fakeApp,
             settings: { ...DEFAULT_SETTINGS, enabledFolders: ['Work'] },
             skipStore: store,
-            modalShow: async () => ({ kind: 'save', text: 'x' }),
+            modalShow: async () => ({ kind: 'save', documentation: 'x', followUp: '' }),
             writer: makeWriter({ write: async (e, t) => { writes.push({ e, t }); } }),
             now: () => 0,
         });
@@ -75,14 +74,14 @@ describe('PromptOrchestrator', () => {
             app: fakeApp,
             settings: { ...DEFAULT_SETTINGS },
             skipStore: store,
-            modalShow: async () => ({ kind: 'save', text: 'did it' }),
+            modalShow: async () => ({ kind: 'save', documentation: 'did it', followUp: '' }),
             writer: makeWriter({ write: async (e, t) => { writes.push({ e, t }); } }),
             now: () => 0,
         });
         await orch.handle(makeEvent('- [x] task'));
         await orch.drainForTest();
         expect(writes).toHaveLength(1);
-        expect(writes[0].t).toBe('did it');
+        expect(writes[0].t).toEqual({ documentation: 'did it', followUp: '' });
     });
 
     test('drops events for permanently skipped tasks', async () => {
@@ -92,7 +91,7 @@ describe('PromptOrchestrator', () => {
             app: fakeApp,
             settings: { ...DEFAULT_SETTINGS },
             skipStore: store,
-            modalShow: async () => ({ kind: 'save', text: 'x' }),
+            modalShow: async () => ({ kind: 'save', documentation: 'x', followUp: '' }),
             writer: makeWriter({ write: async () => { writes.push(1); } }),
             now: () => 0,
         });
@@ -112,7 +111,7 @@ describe('PromptOrchestrator', () => {
             app: fakeApp,
             settings: { ...DEFAULT_SETTINGS },
             skipStore: store,
-            modalShow: async () => ({ kind: 'save', text: 'done' }),
+            modalShow: async () => ({ kind: 'save', documentation: 'done', followUp: '' }),
             writer: makeWriter({ write: async (e, t) => { writes.push(t); } }),
             now: () => 1000,
         });
@@ -121,23 +120,19 @@ describe('PromptOrchestrator', () => {
         store.markDeferred(id, { filePath: ev.file.path, lineNumber: 0, taskLine: ev.taskLine }, 1);
         await orch.handle(ev);
         await orch.drainForTest();
-        expect(writes).toEqual(['done']);
+        expect(writes).toEqual([{ documentation: 'done', followUp: '' }]);
         expect(store.getDeferred()).toEqual([]);
     });
 
-    test('follow-up → writer.writeFollowUp called with the text, no comment written, deferred cleared', async () => {
+    test('save → the writer gets both fields in a single call, deferred cleared', async () => {
         const store = await makeStore();
-        const followUps: string[] = [];
-        const comments: string[] = [];
+        const writes: any[] = [];
         const orch = new PromptOrchestrator({
             app: fakeApp,
             settings: { ...DEFAULT_SETTINGS },
             skipStore: store,
-            modalShow: async () => ({ kind: 'follow-up', text: 'ping Bob' }),
-            writer: makeWriter({
-                write: async (_e, t) => { comments.push(t); },
-                writeFollowUp: async (_e, t) => { followUps.push(t); },
-            }),
+            modalShow: async () => ({ kind: 'save', documentation: 'Drafted v1.', followUp: 'ping Bob' }),
+            writer: makeWriter({ write: async (_e, input) => { writes.push(input); } }),
             now: () => 1000,
         });
         const ev = makeEvent('- [x] task #work');
@@ -145,8 +140,7 @@ describe('PromptOrchestrator', () => {
         store.markDeferred(id, { filePath: ev.file.path, lineNumber: 0, taskLine: ev.taskLine }, 1);
         await orch.handle(ev);
         await orch.drainForTest();
-        expect(followUps).toEqual(['ping Bob']);
-        expect(comments).toEqual([]);
+        expect(writes).toEqual([{ documentation: 'Drafted v1.', followUp: 'ping Bob' }]);
         expect(store.getDeferred()).toEqual([]);
     });
 
@@ -472,7 +466,7 @@ describe('PromptOrchestrator', () => {
             app: makeApp({ [path]: '- [ ] write report\n' }), // user unchecked
             settings: { ...DEFAULT_SETTINGS, doneStatusSymbols: ['x', 'X', '-'] },
             skipStore: store,
-            modalShow: async (line) => { modalCalls.push(line); return { kind: 'save', text: 'doc' }; },
+            modalShow: async (line) => { modalCalls.push(line); return { kind: 'save', documentation: 'doc', followUp: '' }; },
             writer: makeWriter({ write: async (e, t) => { writes.push({ e, t }); } }),
             now: () => 1000,
         });
@@ -499,7 +493,7 @@ describe('PromptOrchestrator', () => {
             app: makeApp({ [path]: '- [-] write report\n' }), // x → -
             settings: { ...DEFAULT_SETTINGS, doneStatusSymbols: ['x', 'X', '-'] },
             skipStore: store,
-            modalShow: async () => ({ kind: 'save', text: 'doc' }),
+            modalShow: async () => ({ kind: 'save', documentation: 'doc', followUp: '' }),
             writer: makeWriter({ write: async (e, t) => { writes.push({ e, t }); receivedNewStatus = e.newStatus; } }),
             now: () => 1000,
         });
@@ -523,7 +517,7 @@ describe('PromptOrchestrator', () => {
             }),
             settings: { ...DEFAULT_SETTINGS, doneStatusSymbols: ['x', 'X', '-'] },
             skipStore: store,
-            modalShow: async () => ({ kind: 'save', text: 'doc' }),
+            modalShow: async () => ({ kind: 'save', documentation: 'doc', followUp: '' }),
             writer: makeWriter({ write: async (e) => { receivedLine = e.lineNumber; } }),
             now: () => 1000,
         });
@@ -543,7 +537,7 @@ describe('PromptOrchestrator', () => {
             app: makeApp({ [path]: '\n' }), // task line deleted
             settings: { ...DEFAULT_SETTINGS, doneStatusSymbols: ['x', 'X', '-'] },
             skipStore: store,
-            modalShow: async (l) => { modalCalls.push(l); return { kind: 'save', text: '' }; },
+            modalShow: async (l) => { modalCalls.push(l); return { kind: 'save', documentation: '', followUp: '' }; },
             writer: makeWriter(),
             now: () => 1000,
         });
@@ -569,7 +563,7 @@ describe('PromptOrchestrator', () => {
             } as any,
             settings: { ...DEFAULT_SETTINGS, doneStatusSymbols: ['x', 'X', '-'] },
             skipStore: store,
-            modalShow: async () => ({ kind: 'save', text: '' }),
+            modalShow: async () => ({ kind: 'save', documentation: '', followUp: '' }),
             writer: makeWriter(),
             now: () => 1000,
         });
@@ -603,7 +597,7 @@ describe('PromptOrchestrator', () => {
                 if (modalCalls.length === 1) {
                     return { kind: 'defer', remindAt: 500 };
                 }
-                return { kind: 'save', text: 'doc' };
+                return { kind: 'save', documentation: 'doc', followUp: '' };
             },
             writer: makeWriter({ write: async (e, t) => { writes.push({ e, t }); } }),
             now: () => 1000,

@@ -7,8 +7,7 @@ import {
 } from '../scheduling/DeferPattern';
 
 export type ModalResult =
-    | { kind: 'save'; text: string }
-    | { kind: 'follow-up'; text: string }
+    | { kind: 'save'; documentation: string; followUp: string }
     | { kind: 'defer'; remindAt?: number; recurrence?: DeferPattern }
     | { kind: 'permanent-skip' }
     | { kind: 'cancel' };
@@ -21,7 +20,8 @@ export interface ModalPrefill {
 export class DocumentationModal extends Modal {
     private resolve!: (r: ModalResult) => void;
     private settled = false;
-    private textarea: HTMLTextAreaElement | null = null;
+    private docInput: HTMLTextAreaElement | null = null;
+    private followUpInput: HTMLTextAreaElement | null = null;
     private panelEl: HTMLElement | null = null;
     private dayInput: HTMLInputElement | null = null;
     private hourInput: HTMLInputElement | null = null;
@@ -60,23 +60,21 @@ export class DocumentationModal extends Modal {
         ctxLine.style.marginBottom = '0.75em';
 
         if (!this.prefill) {
-            // Normal mode: textarea + 4 buttons
-            const ta = contentEl.createEl('textarea', { cls: 'tdp-textarea' });
-            this.textarea = ta;
-            ta.rows = 5;
-            ta.style.width = '100%';
-            ta.placeholder = 'A short paragraph describing what you did…';
-            setTimeout(() => this.textarea?.focus(), 0);
-            ta.addEventListener('keydown', (ev: KeyboardEvent) => {
-                if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') {
-                    ev.preventDefault();
-                    if (ev.shiftKey) {
-                        this.submitFollowUp();
-                    } else {
-                        this.settle({ kind: 'save', text: this.textarea!.value });
-                    }
-                }
+            // Normal mode: two independent fields + 4 buttons. Both are
+            // optional; each one is written on its own (see SubBulletWriter).
+            this.docInput = this.addField(contentEl, {
+                label: 'Documentation',
+                cls: 'tdp-textarea-doc',
+                rows: 5,
+                placeholder: 'A short paragraph describing what you did…',
             });
+            this.followUpInput = this.addField(contentEl, {
+                label: 'Follow-up task',
+                cls: 'tdp-textarea-followup',
+                rows: 2,
+                placeholder: 'Optional — an open task added under this one, inheriting its tags…',
+            });
+            setTimeout(() => this.docInput?.focus(), 0);
         }
 
         const btnRow = contentEl.createDiv({ cls: 'tdp-buttons' });
@@ -86,16 +84,8 @@ export class DocumentationModal extends Modal {
 
         if (!this.prefill) {
             const save = btnRow.createEl('button', { text: 'Save', cls: 'mod-cta' });
-            save.addEventListener('click', () => {
-                this.settle({ kind: 'save', text: this.textarea!.value });
-            });
-
-            const followUp = btnRow.createEl('button', { text: 'Create follow-up' });
-            followUp.setAttr(
-                'title',
-                'Instead of a comment, add an open task under this one that inherits its tags (Cmd/Ctrl+Shift+Enter)',
-            );
-            followUp.addEventListener('click', () => this.submitFollowUp());
+            save.setAttr('title', 'Write whichever fields you filled in (Cmd/Ctrl+Enter)');
+            save.addEventListener('click', () => this.submitSave());
 
             const defer = btnRow.createEl('button', { text: 'Not now' });
             defer.addEventListener('click', () => {
@@ -128,19 +118,44 @@ export class DocumentationModal extends Modal {
     }
 
     /**
-     * "Create follow-up": the textarea text becomes a new open task under the
-     * completed one (tags are inherited by the writer). A task needs a
-     * description, so blank input is rejected and the modal stays open —
-     * unlike Save, which silently writes nothing for blank input.
+     * A labelled textarea that submits the whole modal on Cmd/Ctrl+Enter, so
+     * the shortcut works from whichever field the cursor happens to be in.
      */
-    private submitFollowUp(): void {
-        const text = this.textarea?.value ?? '';
-        if (text.trim() === '') {
-            new Notice('Enter a description for the follow-up task.');
-            this.textarea?.focus();
-            return;
-        }
-        this.settle({ kind: 'follow-up', text });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    private addField(
+        parent: any,
+        opts: { label: string; cls: string; rows: number; placeholder: string },
+    ): HTMLTextAreaElement {
+        const lbl = parent.createEl('div', { cls: 'tdp-field-label', text: opts.label });
+        lbl.style.fontSize = 'var(--font-ui-smaller)';
+        lbl.style.color = 'var(--text-muted)';
+        lbl.style.marginBottom = '0.2em';
+
+        const ta = parent.createEl('textarea', { cls: opts.cls });
+        ta.rows = opts.rows;
+        ta.style.width = '100%';
+        ta.style.marginBottom = '0.6em';
+        ta.placeholder = opts.placeholder;
+        ta.addEventListener('keydown', (ev: KeyboardEvent) => {
+            if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') {
+                ev.preventDefault();
+                this.submitSave();
+            }
+        });
+        return ta;
+    }
+
+    /**
+     * Both fields are optional and independent: the documentation becomes a
+     * comment sub-bullet, the follow-up an open task under it. Empty fields
+     * write nothing, so there is nothing to validate here.
+     */
+    private submitSave(): void {
+        this.settle({
+            kind: 'save',
+            documentation: this.docInput?.value ?? '',
+            followUp: this.followUpInput?.value ?? '',
+        });
     }
 
     private togglePanel(): void {
