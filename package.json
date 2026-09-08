@@ -1,6 +1,6 @@
 {
   "name": "obsidian-tasks-doc-prompt",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Prompt for documentation when a task is completed in Obsidian.",
   "main": "main.js",
   "scripts": {

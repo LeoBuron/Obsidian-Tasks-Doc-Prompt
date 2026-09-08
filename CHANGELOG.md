@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0](https://github.com/LeoBuron/Obsidian-Tasks-Doc-Prompt/compare/0.2.0...0.3.0) (2026-09-08)
+
+
+### Features
+
+* **modal:** split the prompt into documentation and follow-up fields ([eb3306c](https://github.com/LeoBuron/Obsidian-Tasks-Doc-Prompt/commit/eb3306cf4ad938de1cd5a5e249f64abf74568401))
+* **modal:** split the prompt into documentation and follow-up fields ([50ce94e](https://github.com/LeoBuron/Obsidian-Tasks-Doc-Prompt/commit/50ce94e6ac310c6ae9ec8586178ce9558f893c86))
+
 ## [0.2.0](https://github.com/LeoBuron/Obsidian-Tasks-Doc-Prompt/compare/0.1.3...0.2.0) (2026-09-08)
 
 
