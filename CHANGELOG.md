@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.0](https://github.com/LeoBuron/Obsidian-Tasks-Doc-Prompt/compare/0.1.3...0.2.0) (2026-09-08)
+
+
+### Features
+
+* **modal:** add "Create follow-up" button that writes an open task inheriting the parent's tags ([c315e19](https://github.com/LeoBuron/Obsidian-Tasks-Doc-Prompt/commit/c315e1904fc92d5caf210c4a2ca6bee98c59c465))
+
+
+### Bug Fixes
+
+* **e2e:** make the harness fail fast instead of hanging or passing vacuously ([4872ae2](https://github.com/LeoBuron/Obsidian-Tasks-Doc-Prompt/commit/4872ae2ff9aa9ba84700554fdd9af5f2a4c7bba5))
+
 ## [0.1.3](https://github.com/LeoBuron/Obsidian-Tasks-Doc-Prompt/compare/0.1.2...0.1.3) (2026-06-23)
 
 
